@@ -1,0 +1,150 @@
+name: 🐛 Bug Report
+description: Report a bug to help us improve VOYAGER-Trader
+title: "[Bug]: "
+labels: ["bug", "triage"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill out this bug report!
+        Please provide as much detail as possible to help us reproduce and fix the issue.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Bug Summary
+      description: A clear and concise description of what the bug is
+      placeholder: Describe the bug in 1-2 sentences
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to Reproduce
+      description: Detailed steps to reproduce the behavior
+      placeholder: |
+        1. Go to '...'
+        2. Execute command '...'
+        3. Set parameters '...'
+        4. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: A clear description of what you expected to happen
+      placeholder: What should have happened instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: A clear description of what actually happened
+      placeholder: What actually happened?
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Error Messages/Logs
+      description: If applicable, add error messages, stack traces, or relevant logs
+      placeholder: Paste error messages or logs here
+      render: shell
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Affected Component
+      description: Which component of VOYAGER-Trader is affected?
+      options:
+        - Core System (VoyagerTrader)
+        - Automatic Curriculum
+        - Skill Library
+        - Iterative Prompting
+        - API/Integration
+        - Configuration
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      description: How severe is this bug?
+      options:
+        - Critical (System crashes/unusable)
+        - High (Major functionality broken)
+        - Medium (Minor functionality issue)
+        - Low (Cosmetic/Enhancement)
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: What version of VOYAGER-Trader are you using?
+      placeholder: v0.1.0
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment Details
+      description: Please provide relevant environment information
+      placeholder: |
+        - OS: [e.g. Ubuntu 22.04, macOS 13.0, Windows 11]
+        - Python Version: [e.g. 3.11.2]
+        - Dependencies: [any relevant package versions]
+        - Hardware: [if relevant, e.g. GPU model]
+    validations:
+      required: true
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Configuration
+      description: Relevant configuration settings (remove any sensitive information)
+      placeholder: |
+        # Trading configuration
+        model_name: "gpt-4"
+        max_iterations: 1000
+        # ... other relevant config
+      render: yaml
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Add any other context about the problem
+      placeholder: |
+        - Screenshots (if applicable)
+        - Related issues
+        - Workarounds you've tried
+        - Impact on your use case
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Pre-submission Checklist
+      description: Please verify the following before submitting
+      options:
+        - label: I have searched existing issues to ensure this bug hasn't been reported
+          required: true
+        - label: I have provided enough information to reproduce the bug
+          required: true
+        - label: I have removed any sensitive information from logs/config
+          required: true
+        - label: I am using a supported version of VOYAGER-Trader
+          required: true

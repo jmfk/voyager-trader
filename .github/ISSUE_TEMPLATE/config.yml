@@ -1,0 +1,17 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 Discussion Forum
+    url: https://github.com/voyager-trader/discussions
+    about: Ask questions and discuss ideas with the community
+
+  - name: 📚 Documentation
+    url: https://docs.voyager-trader.org
+    about: Check the documentation for usage guides and API reference
+
+  - name: 🔒 Security Issue
+    url: mailto:security@voyager-trader.org
+    about: Report security vulnerabilities privately (do not create public issues)
+
+  - name: 💼 Commercial Support
+    url: https://voyager-trader.org/support
+    about: Get commercial support and consulting services

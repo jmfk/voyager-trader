@@ -1,0 +1,235 @@
+name: ✨ Feature Request
+description: Suggest a new feature or enhancement for VOYAGER-Trader
+title: "[Feature]: "
+labels: ["enhancement", "triage"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting a new feature!
+        Please provide detailed information to help us understand and evaluate your request.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Feature Summary
+      description: A clear and concise description of the feature you'd like to see
+      placeholder: Briefly describe the feature in 1-2 sentences
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component Area
+      description: Which component would this feature primarily affect?
+      options:
+        - Core System (VoyagerTrader)
+        - Automatic Curriculum
+        - Skill Library
+        - Iterative Prompting
+        - Trading Strategies
+        - Market Data Integration
+        - Risk Management
+        - Performance Analytics
+        - API/CLI Interface
+        - Configuration Management
+        - Documentation
+        - Testing Infrastructure
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: type
+    attributes:
+      label: Feature Type
+      description: What type of feature is this?
+      options:
+        - New functionality
+        - Enhancement to existing feature
+        - Performance improvement
+        - Developer experience improvement
+        - Integration with external service
+        - Configuration option
+        - API endpoint
+        - CLI command
+        - Documentation improvement
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: What problem does this feature solve? What pain point does it address?
+      placeholder: |
+        Describe the current limitation or problem:
+        - What can't you do today?
+        - What's difficult or inefficient?
+        - What's missing from the current system?
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: Describe your proposed solution in detail
+      placeholder: |
+        Describe how you envision this feature working:
+        - What should the user experience be?
+        - How should it integrate with existing functionality?
+        - What should the API/interface look like?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternative Solutions
+      description: Have you considered any alternative approaches?
+      placeholder: |
+        Describe alternative solutions you've considered:
+        - Other ways to solve the same problem
+        - Workarounds you're currently using
+        - Similar features in other tools
+
+  - type: textarea
+    id: use-cases
+    attributes:
+      label: Use Cases
+      description: Provide specific use cases and examples
+      placeholder: |
+        Describe specific scenarios where this feature would be valuable:
+        1. Trading scenario: [describe the trading situation]
+        2. User workflow: [describe how a user would use this]
+        3. Integration scenario: [describe system integration needs]
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority/Impact
+      description: How important is this feature to you?
+      options:
+        - Critical (Blocking my use of the system)
+        - High (Significantly improves my workflow)
+        - Medium (Nice to have improvement)
+        - Low (Minor enhancement)
+    validations:
+      required: true
+
+  - type: textarea
+    id: requirements
+    attributes:
+      label: Detailed Requirements
+      description: Break down the feature into specific requirements
+      placeholder: |
+        Functional Requirements:
+        - [ ] Requirement 1: Description
+        - [ ] Requirement 2: Description
+
+        Non-Functional Requirements:
+        - Performance: [specify performance needs]
+        - Scalability: [specify scalability needs]
+        - Security: [specify security considerations]
+        - Compatibility: [specify compatibility requirements]
+
+  - type: textarea
+    id: architecture
+    attributes:
+      label: Architecture Considerations
+      description: How might this feature affect the system architecture?
+      placeholder: |
+        Consider the impact on:
+        - VOYAGER's three core components (Curriculum, Skills, Prompting)
+        - Data flow and storage requirements
+        - External dependencies
+        - SOLID principles compliance
+        - Potential need for ADR (Architecture Decision Record)
+
+  - type: textarea
+    id: api-design
+    attributes:
+      label: API/Interface Design
+      description: If applicable, propose the API or interface design
+      placeholder: |
+        ```python
+        # Example API usage
+        trader = VoyagerTrader()
+        result = trader.new_feature(param1="value", param2=42)
+        ```
+
+        Or describe CLI interface:
+        ```bash
+        voyager-trader new-command --option value
+        ```
+      render: python
+
+  - type: textarea
+    id: testing
+    attributes:
+      label: Testing Strategy
+      description: How should this feature be tested?
+      placeholder: |
+        Testing considerations:
+        - Unit tests needed
+        - Integration tests needed
+        - Performance tests needed
+        - Security tests needed
+        - User acceptance criteria
+
+  - type: textarea
+    id: documentation
+    attributes:
+      label: Documentation Requirements
+      description: What documentation would be needed?
+      placeholder: |
+        Documentation needs:
+        - User documentation (how to use the feature)
+        - Developer documentation (implementation details)
+        - API documentation (if adding new APIs)
+        - Configuration documentation
+        - Migration guide (if changing existing behavior)
+
+  - type: textarea
+    id: migration
+    attributes:
+      label: Migration/Backward Compatibility
+      description: How would this affect existing users?
+      placeholder: |
+        Compatibility considerations:
+        - Is this a breaking change?
+        - Do existing configurations need updates?
+        - Is a migration path needed?
+        - How to handle deprecated functionality?
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Any other relevant information
+      placeholder: |
+        Additional information:
+        - Links to relevant research papers
+        - Examples from other trading systems
+        - Screenshots or mockups
+        - Related issues or discussions
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Pre-submission Checklist
+      description: Please verify the following before submitting
+      options:
+        - label: I have searched existing issues to ensure this feature hasn't been requested
+          required: true
+        - label: I have provided sufficient detail for others to understand the request
+          required: true
+        - label: I have considered the architectural impact of this feature
+          required: true
+        - label: This feature aligns with VOYAGER-Trader's core mission and principles
+          required: true

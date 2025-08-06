@@ -1,0 +1,36 @@
+# Global code owners
+* @voyager-trader/maintainers
+
+# Core system architecture
+/src/voyager_trader/core.py @voyager-trader/core-team @voyager-trader/architects
+/src/voyager_trader/__init__.py @voyager-trader/core-team
+
+# Component-specific ownership
+/src/voyager_trader/curriculum.py @voyager-trader/curriculum-team
+/src/voyager_trader/skills.py @voyager-trader/skills-team
+/src/voyager_trader/prompting.py @voyager-trader/prompting-team
+
+# Architecture Decision Records
+/docs/adr/ @voyager-trader/architects @voyager-trader/maintainers
+
+# Configuration and deployment
+/requirements.txt @voyager-trader/maintainers @voyager-trader/security-team
+/.github/ @voyager-trader/maintainers @voyager-trader/devops-team
+/Dockerfile @voyager-trader/devops-team
+/docker-compose.yml @voyager-trader/devops-team
+
+# Security-sensitive files
+/SECURITY.md @voyager-trader/security-team @voyager-trader/maintainers
+
+# Documentation
+/README.md @voyager-trader/maintainers @voyager-trader/docs-team
+/docs/ @voyager-trader/docs-team
+/CLAUDE.md @voyager-trader/maintainers
+
+# Testing infrastructure
+/tests/ @voyager-trader/maintainers @voyager-trader/qa-team
+/.github/workflows/ @voyager-trader/maintainers @voyager-trader/devops-team
+
+# Project management
+/goals.md @voyager-trader/product-team @voyager-trader/maintainers
+/VOYAGER-Trader_PDR_*.md @voyager-trader/architects @voyager-trader/product-team
