@@ -1,0 +1,158 @@
+name: Dependency Updates
+
+on:
+  schedule:
+    # Run every Monday at 9 AM UTC
+    - cron: '0 9 * * 1'
+  workflow_dispatch: # Allow manual triggering
+
+env:
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  security-audit:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install safety pip-audit
+        pip install -r requirements.txt
+
+    - name: Run safety check
+      run: |
+        safety check --json --output safety-report.json || true
+
+    - name: Run pip-audit
+      run: |
+        pip-audit --format=json --output=pip-audit-report.json || true
+
+    - name: Upload security reports
+      uses: actions/upload-artifact@v3
+      with:
+        name: security-reports
+        path: |
+          safety-report.json
+          pip-audit-report.json
+
+    - name: Create security issue if vulnerabilities found
+      run: |
+        if [ -f safety-report.json ] && [ "$(jq '.vulnerabilities | length' safety-report.json)" -gt 0 ]; then
+          echo "::warning::Security vulnerabilities found in dependencies"
+          # Could integrate with GitHub Issues API to create an issue
+        fi
+        if [ -f pip-audit-report.json ] && [ "$(jq '. | length' pip-audit-report.json)" -gt 0 ]; then
+          echo "::warning::Audit issues found in dependencies"
+        fi
+
+  dependency-check:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install pip-tools
+      run: |
+        python -m pip install --upgrade pip
+        pip install pip-tools
+
+    - name: Check for outdated packages
+      run: |
+        # Create requirements.in from requirements.txt if it doesn't exist
+        if [ ! -f requirements.in ]; then
+          cp requirements.txt requirements.in
+        fi
+
+        # Generate updated requirements
+        pip-compile requirements.in --output-file=requirements-new.txt --upgrade
+
+        # Compare with current requirements
+        if ! diff requirements.txt requirements-new.txt > /dev/null; then
+          echo "::notice::Dependencies can be updated"
+          echo "Changes:"
+          diff requirements.txt requirements-new.txt || true
+
+          # Save the new requirements for potential PR
+          cp requirements-new.txt requirements-updated.txt
+        else
+          echo "::notice::All dependencies are up to date"
+        fi
+
+    - name: Test with updated dependencies
+      run: |
+        if [ -f requirements-updated.txt ]; then
+          echo "Testing with updated dependencies..."
+          python -m venv test-env
+          source test-env/bin/activate
+          pip install -r requirements-updated.txt
+
+          # Run basic tests
+          PYTHONPATH=src python -m pytest tests/ --tb=short -x
+
+          echo "::notice::Updated dependencies pass tests"
+        fi
+
+    - name: Upload updated requirements
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: updated-requirements
+        path: |
+          requirements-updated.txt
+          requirements-new.txt
+
+    # This job could be extended to automatically create a PR with dependency updates
+    # using a tool like Dependabot or a custom GitHub Action
+
+  license-check:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install license checker
+      run: |
+        python -m pip install --upgrade pip
+        pip install pip-licenses
+        pip install -r requirements.txt
+
+    - name: Check licenses
+      run: |
+        # Generate license report
+        pip-licenses --format=json --output-file=licenses.json
+        pip-licenses --format=plain --output-file=licenses.txt
+
+        # Check for problematic licenses
+        PROBLEMATIC_LICENSES="GPL-3.0 AGPL-3.0 LGPL-3.0"
+
+        for license in $PROBLEMATIC_LICENSES; do
+          if pip-licenses | grep -i "$license"; then
+            echo "::warning::Found potentially problematic license: $license"
+          fi
+        done
+
+    - name: Upload license reports
+      uses: actions/upload-artifact@v3
+      with:
+        name: license-reports
+        path: |
+          licenses.json
+          licenses.txt

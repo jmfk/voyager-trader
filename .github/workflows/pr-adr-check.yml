@@ -11,7 +11,7 @@ jobs:
     - uses: actions/checkout@v4
       with:
         fetch-depth: 0
-    
+
     - name: Check for ADR Updates
       run: |
         # Check if architectural changes require ADR updates
@@ -20,33 +20,33 @@ jobs:
           echo "::warning::Architectural changes detected. Consider updating ADRs:"
           echo "$ARCH_FILES"
         fi
-    
+
     - name: Validate ADR Format
       run: |
         # Check all ADR files follow proper format
-        for adr_file in docs/adr/*.md; do
+        for adr_file in docs/adr/[0-9]*.md; do
           if [ -f "$adr_file" ]; then
             echo "Validating $adr_file"
             # Check required sections exist
-            if ! grep -q "# Status" "$adr_file"; then
+            if ! grep -q "## Status" "$adr_file"; then
               echo "::error::Missing Status section in $adr_file"
               exit 1
             fi
-            if ! grep -q "# Context" "$adr_file"; then
+            if ! grep -q "## Context" "$adr_file"; then
               echo "::error::Missing Context section in $adr_file"
               exit 1
             fi
-            if ! grep -q "# Decision" "$adr_file"; then
+            if ! grep -q "## Decision" "$adr_file"; then
               echo "::error::Missing Decision section in $adr_file"
               exit 1
             fi
-            if ! grep -q "# Consequences" "$adr_file"; then
+            if ! grep -q "## Consequences" "$adr_file"; then
               echo "::error::Missing Consequences section in $adr_file"
               exit 1
             fi
           fi
         done
-    
+
     - name: Check Migration Documentation
       run: |
         # Check if superseded ADRs have migration paths
@@ -62,43 +62,43 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
         python-version: '3.11'
-    
+
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install flake8 black mypy pytest pytest-cov
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-    
+
     - name: Check SOLID Principles
       run: |
         echo "::group::Checking Single Responsibility Principle"
         # Check for files with too many responsibilities (>200 lines)
         find src/ -name "*.py" -exec wc -l {} \; | awk '$1 > 200 { print "::warning::File " $2 " has " $1 " lines - consider breaking down (SRP)" }'
         echo "::endgroup::"
-        
+
         echo "::group::Checking DRY Principle"
         # Basic duplication detection (this is a simplified check)
         find src/ -name "*.py" -exec grep -l "def.*(" {} \; | xargs -I {} sh -c 'echo "Functions in {}:"; grep "def " {}'
         echo "::endgroup::"
-    
+
     - name: Lint with flake8
       run: |
         # stop the build if there are Python syntax errors or undefined names
         flake8 src/ --count --select=E9,F63,F7,F82 --show-source --statistics
         # exit-zero treats all errors as warnings
         flake8 src/ --count --exit-zero --max-complexity=10 --max-line-length=88 --statistics
-    
+
     - name: Check code formatting
       run: black --check src/ tests/
-    
+
     - name: Type checking
       run: mypy src/ || echo "::warning::Type checking issues found"
-    
+
     - name: Run tests with coverage
       run: |
         pytest tests/ --cov=src --cov-report=term-missing --cov-fail-under=90 || echo "::error::Test coverage below 90%"
