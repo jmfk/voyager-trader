@@ -12,10 +12,12 @@ Follows the architecture defined in ADR-0010.
 """
 
 import logging
-from dataclasses import dataclass
+import time
 from decimal import Decimal
 from enum import Enum
 from typing import Any, Dict, List, Optional, Protocol
+
+from pydantic import BaseModel, Field, field_validator
 
 from .models.system import (
     Agent,
@@ -56,59 +58,73 @@ class AdaptationTrigger(str, Enum):
     TIME_BASED = "time_based"
 
 
-@dataclass
-class TaskTemplate:
-    """Template for generating curriculum tasks."""
+class TaskTemplate(BaseModel):
+    """Template for generating curriculum tasks with validation."""
 
-    name: str
-    description: str
+    name: str = Field(..., min_length=1, max_length=100)
+    description: str = Field(..., min_length=1, max_length=500)
     task_type: TaskType
     difficulty_level: DifficultyLevel
-    objectives: List[str]
-    success_criteria: List[str]
-    required_skills: List[str]
-    parameters: Dict[str, Any]
-    market_conditions: List[MarketCondition]
-    estimated_duration_minutes: int
+    objectives: List[str] = Field(..., min_length=1, max_length=10)
+    success_criteria: List[str] = Field(..., min_length=1, max_length=10)
+    required_skills: List[str] = Field(default_factory=list, max_length=20)
+    parameters: Dict[str, Any] = Field(default_factory=dict)
+    market_conditions: List[MarketCondition] = Field(
+        default_factory=list, max_length=15
+    )
+    estimated_duration_minutes: int = Field(..., ge=1, le=1440)  # 1 min to 24 hours
+
+    @field_validator("parameters")
+    @classmethod
+    def validate_parameters(cls, v):
+        """Validate task parameters structure."""
+        if not isinstance(v, dict):
+            raise ValueError("Parameters must be a dictionary")
+
+        # Validate common parameter types
+        for key, value in v.items():
+            if not isinstance(key, str):
+                raise ValueError(f"Parameter key '{key}' must be a string")
+            if key.startswith("_"):
+                raise ValueError(f"Parameter key '{key}' cannot start with underscore")
+
+        return v
 
 
-@dataclass
-class DifficultyScore:
-    """Multi-dimensional difficulty assessment."""
+class DifficultyScore(BaseModel):
+    """Multi-dimensional difficulty assessment with validation."""
 
-    overall: Decimal  # 0.0 to 1.0
-    technical_complexity: Decimal
-    market_complexity: Decimal
-    risk_level: Decimal
-    prerequisite_count: int
-    estimated_learning_time: int
-    confidence: Decimal  # How confident we are in this assessment
-
-
-@dataclass
-class PerformanceAnalysis:
-    """Analysis of agent performance trends."""
-
-    success_rate: Decimal
-    improvement_trend: str  # "improving", "declining", "stable"
-    learning_velocity: Decimal
-    strengths: List[str]
-    weaknesses: List[str]
-    recommendations: List[str]
-    confidence_level: Decimal
+    overall: Decimal = Field(..., ge=0.0, le=1.0)
+    technical_complexity: Decimal = Field(..., ge=0.0, le=1.0)
+    market_complexity: Decimal = Field(..., ge=0.0, le=1.0)
+    risk_level: Decimal = Field(..., ge=0.0, le=1.0)
+    prerequisite_count: int = Field(..., ge=0, le=50)
+    estimated_learning_time: int = Field(..., ge=1, le=10080)  # 1 min to 1 week
+    confidence: Decimal = Field(..., ge=0.0, le=1.0)
 
 
-@dataclass
-class MarketContext:
-    """Current market context for curriculum decisions."""
+class PerformanceAnalysis(BaseModel):
+    """Analysis of agent performance trends with validation."""
 
-    conditions: List[MarketCondition]
-    volatility: Decimal
-    trend_strength: Decimal
-    liquidity: Decimal
-    news_impact: Decimal
-    suitable_strategies: List[str]
-    risk_factors: List[str]
+    success_rate: Decimal = Field(..., ge=0.0, le=1.0)
+    improvement_trend: str = Field(..., pattern=r"^(improving|declining|stable)$")
+    learning_velocity: Decimal = Field(..., ge=0.0)
+    strengths: List[str] = Field(default_factory=list, max_length=20)
+    weaknesses: List[str] = Field(default_factory=list, max_length=20)
+    recommendations: List[str] = Field(default_factory=list, max_length=20)
+    confidence_level: Decimal = Field(..., ge=0.0, le=1.0)
+
+
+class MarketContext(BaseModel):
+    """Current market context for curriculum decisions with validation."""
+
+    conditions: List[MarketCondition] = Field(default_factory=list, max_length=15)
+    volatility: Decimal = Field(..., ge=0.0, le=2.0)  # 0-200% volatility
+    trend_strength: Decimal = Field(..., ge=0.0, le=1.0)
+    liquidity: Decimal = Field(..., ge=0.0, le=1.0)
+    news_impact: Decimal = Field(..., ge=0.0, le=1.0)
+    suitable_strategies: List[str] = Field(default_factory=list, max_length=30)
+    risk_factors: List[str] = Field(default_factory=list, max_length=20)
 
 
 # Core Curriculum Interfaces
@@ -262,13 +278,33 @@ class AutomaticCurriculumService:
         This is the main entry point that orchestrates all components.
         """
         self.logger.info(f"Generating next task for agent {agent.name}")
+        self.logger.debug(
+            f"Agent state: completed_tasks={len(agent.completed_tasks)}, "
+            f"active_tasks={len(agent.active_tasks)}, "
+            f"completion_rate={agent.task_completion_rate}"
+        )
 
         # Analyze current market context
+        start_time = time.time()
         market_context = self.context_analyzer.analyze_market_context(environment)
+        context_analysis_time = time.time() - start_time
+
+        self.logger.debug(
+            f"Market context analysis completed in {context_analysis_time:.3f}s"
+        )
+        self.logger.debug(
+            f"Market conditions: {market_context.conditions}, "
+            f"volatility={market_context.volatility}, "
+            f"trend_strength={market_context.trend_strength}"
+        )
 
         # Check if conditions are suitable for learning
         if not self.context_analyzer.is_suitable_for_learning(market_context):
-            self.logger.info("Market conditions not suitable for learning")
+            self.logger.warning(
+                f"Market conditions not suitable for learning: "
+                f"conditions={market_context.conditions}, "
+                f"volatility={market_context.volatility}"
+            )
             return None
 
         # Analyze agent performance
@@ -313,9 +349,13 @@ class AutomaticCurriculumService:
     ) -> Curriculum:
         """Handle task completion and update curriculum."""
         self.logger.info(f"Completing task {task.title}, success: {success}")
+        self.logger.debug(f"Task metrics: {metrics}")
 
         # Track the completion
+        start_time = time.time()
         self.progress_tracker.track_task_completion(task, success, metrics)
+        tracking_time = time.time() - start_time
+        self.logger.debug(f"Task completion tracking took {tracking_time:.3f}s")
 
         # Update curriculum
         curriculum = (
@@ -324,8 +364,18 @@ class AutomaticCurriculumService:
             else curriculum.fail_task(task.id, metrics.get("failure_reason", "Unknown"))
         )
 
+        self.logger.debug(
+            f"Curriculum updated: difficulty={curriculum.current_difficulty}, "
+            f"completed_tasks={len(curriculum.completed_tasks)}"
+        )
+
         # Check for adaptation triggers
         performance = self.progress_tracker.analyze_performance(agent, curriculum)
+        self.logger.debug(
+            f"Performance analysis: success_rate={performance.success_rate}, "
+            f"trend={performance.improvement_trend}, "
+            f"velocity={performance.learning_velocity}"
+        )
 
         trigger = (
             AdaptationTrigger.TASK_COMPLETION

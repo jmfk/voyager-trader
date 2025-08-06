@@ -7,6 +7,8 @@ components work together correctly.
 
 from decimal import Decimal
 
+from pydantic import ValidationError
+
 from voyager_trader.curriculum import (
     DifficultyScore,
     MarketCondition,
@@ -158,7 +160,7 @@ def test_market_context_analyzer():
         suitable = analyzer.is_suitable_for_learning(context)
         assert isinstance(suitable, bool)
 
-    except Exception as e:
+    except (ValueError, ValidationError, TypeError) as e:
         # If model creation fails due to validation, that's expected in this test
         print(f"Model creation failed (expected): {e}")
 

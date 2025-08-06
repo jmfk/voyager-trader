@@ -19,6 +19,7 @@ from .curriculum_components import (
     MarketContextAnalyzer,
     PerformanceProgressTracker,
     StandardDifficultyAssessor,
+    sanitize_file_path,
 )
 from .models.system import Agent, Curriculum, Environment, Task
 
@@ -31,10 +32,15 @@ class CurriculumPersistenceService:
     to enable system restart and recovery.
     """
 
-    def __init__(self, storage_path: str = "curriculum_data"):
+    def __init__(
+        self, storage_path: str = "curriculum_data", max_history_entries: int = 1000
+    ):
         """Initialize with storage configuration."""
-        self.storage_path = Path(storage_path)
+        # Sanitize storage path for security
+        sanitized_path = sanitize_file_path(storage_path)
+        self.storage_path = sanitized_path
         self.storage_path.mkdir(exist_ok=True)
+        self.max_history_entries = max_history_entries
         self.logger = logging.getLogger(__name__)
 
     def save_curriculum_state(
@@ -75,7 +81,7 @@ class CurriculumPersistenceService:
             self.logger.info(f"Loaded curriculum state for agent {agent_id}")
             return state
 
-        except Exception as e:
+        except (OSError, json.JSONDecodeError, KeyError) as e:
             self.logger.error(f"Failed to load curriculum state: {e}")
             return None
 
@@ -115,7 +121,7 @@ class CurriculumPersistenceService:
             self.logger.info(f"Loaded {len(history)} task completion records")
             return history
 
-        except Exception as e:
+        except (OSError, json.JSONDecodeError) as e:
             self.logger.error(f"Failed to load task history: {e}")
             return []
 
@@ -150,7 +156,7 @@ class CurriculumPersistenceService:
             "successful_trades": agent.successful_trades,
             "total_pnl": {
                 "amount": float(agent.total_pnl.amount),
-                "currency": agent.total_pnl.currency.value,
+                "currency": str(agent.total_pnl.currency),
             },
         }
 
@@ -195,6 +201,117 @@ class CurriculumPersistenceService:
                 task.completed_at.isoformat() if task.completed_at else None
             ),
         }
+
+    def cleanup_old_files(self) -> None:
+        """Clean up old files and implement file rotation policies."""
+        self.logger.info("Starting file cleanup and rotation")
+
+        try:
+            # Rotate task history files if they exceed max entries
+            for history_file in self.storage_path.glob("*_task_history.jsonl"):
+                self._rotate_history_file(history_file)
+
+            # Clean up temporary files older than 7 days
+            import time
+
+            cutoff_time = time.time() - (7 * 24 * 60 * 60)  # 7 days ago
+
+            for temp_file in self.storage_path.glob("*.tmp"):
+                if temp_file.stat().st_mtime < cutoff_time:
+                    temp_file.unlink()
+                    self.logger.info(f"Removed old temp file: {temp_file}")
+
+            # Clean up old backup files (keep only latest 5)
+            for agent_dir in self.storage_path.glob("*_curriculum_state.json.bak.*"):
+                backup_files = sorted(
+                    self.storage_path.glob(f"{agent_dir.stem}.bak.*"),
+                    key=lambda x: x.stat().st_mtime,
+                    reverse=True,
+                )
+                for old_backup in backup_files[5:]:  # Keep only 5 most recent
+                    old_backup.unlink()
+                    self.logger.info(f"Removed old backup: {old_backup}")
+
+        except (OSError, IOError) as e:
+            self.logger.error(f"Error during file cleanup: {e}")
+
+    def _rotate_history_file(self, history_file: Path) -> None:
+        """Rotate history file if it exceeds maximum entries."""
+        try:
+            # Count lines in file
+            with open(history_file, "r") as f:
+                line_count = sum(1 for _ in f)
+
+            if line_count > self.max_history_entries:
+                self.logger.info(
+                    f"Rotating history file {history_file} ({line_count} entries)"
+                )
+
+                # Read last max_history_entries lines
+                with open(history_file, "r") as f:
+                    lines = f.readlines()
+
+                # Create backup
+                import time as time_module
+
+                backup_file = history_file.with_suffix(
+                    f".bak.{int(time_module.time())}"
+                )
+                history_file.rename(backup_file)
+
+                # Write truncated history
+                keep_lines = lines[-self.max_history_entries :]
+                with open(history_file, "w") as f:
+                    f.writelines(keep_lines)
+
+                self.logger.info(
+                    f"Rotated {history_file}, kept {len(keep_lines)} entries"
+                )
+
+        except (OSError, IOError) as e:
+            self.logger.error(f"Error rotating history file {history_file}: {e}")
+
+    def get_storage_stats(self) -> Dict[str, Any]:
+        """Get statistics about storage usage."""
+        stats = {
+            "storage_path": str(self.storage_path),
+            "total_files": 0,
+            "total_size_bytes": 0,
+            "file_types": {},
+            "oldest_file": None,
+            "newest_file": None,
+        }
+
+        try:
+            oldest_time = float("inf")
+            newest_time = 0
+
+            for file_path in self.storage_path.rglob("*"):
+                if file_path.is_file():
+                    stats["total_files"] += 1
+                    file_size = file_path.stat().st_size
+                    stats["total_size_bytes"] += file_size
+
+                    # Track file types
+                    suffix = file_path.suffix or "no_extension"
+                    stats["file_types"][suffix] = stats["file_types"].get(suffix, 0) + 1
+
+                    # Track oldest/newest
+                    mtime = file_path.stat().st_mtime
+                    if mtime < oldest_time:
+                        oldest_time = mtime
+                        stats["oldest_file"] = str(file_path)
+                    if mtime > newest_time:
+                        newest_time = mtime
+                        stats["newest_file"] = str(file_path)
+
+            # Convert to human readable
+            stats["total_size_mb"] = round(stats["total_size_bytes"] / (1024 * 1024), 2)
+
+        except (OSError, IOError) as e:
+            self.logger.error(f"Error collecting storage stats: {e}")
+
+        return stats
 
 
 class ResumableCurriculumService(AutomaticCurriculumService):
@@ -371,7 +488,7 @@ class ResumableCurriculumService(AutomaticCurriculumService):
             )
             return current_agent, curriculum, active_tasks
 
-        except Exception as e:
+        except (OSError, json.JSONDecodeError, KeyError, ValueError) as e:
             self.logger.error(f"Failed to resume from state: {e}")
             # Fall back to new curriculum
             return self._initialize_new_curriculum(current_agent, None)
