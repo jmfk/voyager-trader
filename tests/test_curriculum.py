@@ -159,6 +159,7 @@ class TestBasicCurriculumGenerator:
         return Curriculum(
             id="test_curriculum",
             name="Test Curriculum",
+            description="Test curriculum for testing",
             agent_id=agent.id,
             strategy=CurriculumStrategy.PROGRESSIVE,
             target_skills=["basic_trading"],
@@ -412,6 +413,7 @@ class TestPerformanceProgressTracker:
         return Curriculum(
             id="test_curriculum",
             name="Test Curriculum",
+            description="Test curriculum for progress tracking",
             agent_id=agent.id,
             strategy=CurriculumStrategy.PROGRESSIVE,
             target_skills=["skill1", "skill2", "skill3"],
@@ -501,6 +503,7 @@ class TestAdaptiveLogicEngine:
         return Curriculum(
             id="test_curriculum",
             name="Test Curriculum",
+            description="Test curriculum for adaptive engine",
             agent_id="test_agent",
             strategy=CurriculumStrategy.PROGRESSIVE,
             current_difficulty=DifficultyLevel.INTERMEDIATE,
@@ -765,6 +768,7 @@ class TestCurriculumPersistenceService:
         return Curriculum(
             id="test_curriculum",
             name="Test Curriculum",
+            description="Test curriculum for persistence",
             agent_id=agent.id,
             strategy=CurriculumStrategy.PROGRESSIVE,
             target_skills=["skill1", "skill2"],
