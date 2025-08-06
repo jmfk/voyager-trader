@@ -6,7 +6,7 @@ on:
       - 'v*.*.*'
 
 env:
-  PYTHON_VERSION: '3.11'
+  PYTHON_VERSION: '3.12'
 
 jobs:
   test-before-release:
@@ -85,13 +85,11 @@ jobs:
                 "License :: OSI Approved :: MIT License",
                 "Operating System :: OS Independent",
                 "Programming Language :: Python :: 3",
-                "Programming Language :: Python :: 3.10",
-                "Programming Language :: Python :: 3.11",
                 "Programming Language :: Python :: 3.12",
                 "Topic :: Office/Business :: Financial :: Investment",
                 "Topic :: Scientific/Engineering :: Artificial Intelligence",
             ],
-            python_requires=">=3.10",
+            python_requires=">=3.12",
             install_requires=requirements,
             entry_points={
                 "console_scripts": [
@@ -134,7 +132,7 @@ jobs:
     - name: Create Dockerfile
       run: |
         cat > Dockerfile << 'EOF'
-        FROM python:3.11-slim
+        FROM python:3.12-slim
 
         WORKDIR /app
 
