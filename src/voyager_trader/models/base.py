@@ -73,10 +73,20 @@ class BaseEntity(VoyagerBaseModel, ABC):
         Returns a new instance with the updated_at timestamp refreshed
         and version incremented.
         """
+        # Handle version increment for both int and str types
+        if isinstance(self.version, str):
+            try:
+                version_float = float(self.version)
+                new_version = str(version_float + 0.1)
+            except (ValueError, TypeError):
+                new_version = self.version
+        else:
+            new_version = self.version + 1
+
         update_data = {
             **kwargs,
             "updated_at": datetime.utcnow(),
-            "version": self.version + 1,
+            "version": new_version,
         }
         return self.model_copy(update=update_data)
 
