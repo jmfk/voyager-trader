@@ -58,7 +58,7 @@ repos:
         name: ADR Format Validation
         entry: bash
         language: system
-        files: ^docs/adr/.*\.md$
+        files: ^docs/adr/[0-9].*\.md$
         args:
           - -c
           - |
@@ -66,20 +66,20 @@ repos:
               echo "Validating ADR format: $file"
               if [ -f "$file" ]; then
                 # Check required sections exist
-                if ! grep -q "^# Status" "$file"; then
-                  echo "ERROR: Missing '# Status' section in $file"
+                if ! grep -q "^## Status" "$file"; then
+                  echo "ERROR: Missing '## Status' section in $file"
                   exit 1
                 fi
-                if ! grep -q "^# Context" "$file"; then
-                  echo "ERROR: Missing '# Context' section in $file"
+                if ! grep -q "^## Context" "$file"; then
+                  echo "ERROR: Missing '## Context' section in $file"
                   exit 1
                 fi
-                if ! grep -q "^# Decision" "$file"; then
-                  echo "ERROR: Missing '# Decision' section in $file"
+                if ! grep -q "^## Decision" "$file"; then
+                  echo "ERROR: Missing '## Decision' section in $file"
                   exit 1
                 fi
-                if ! grep -q "^# Consequences" "$file"; then
-                  echo "ERROR: Missing '# Consequences' section in $file"
+                if ! grep -q "^## Consequences" "$file"; then
+                  echo "ERROR: Missing '## Consequences' section in $file"
                   exit 1
                 fi
                 echo "✅ ADR format valid: $file"

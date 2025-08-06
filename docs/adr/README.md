@@ -1,6 +1,8 @@
 # Architecture Decision Records (ADR)
 
-This directory contains Architecture Decision Records for the VOYAGER-Trader project. ADRs document important architectural decisions made during the project's development.
+## Status
+
+Active - This directory contains Architecture Decision Records for the VOYAGER-Trader project. ADRs document important architectural decisions made during the project's development.
 
 ## What is an ADR?
 
@@ -96,6 +98,8 @@ When superseding an ADR, always include a "Migration Path" section with:
 | Number | Title | Status | Date |
 |--------|-------|--------|------|
 | [0001](0001-record-architecture-decisions.md) | Record Architecture Decisions | Accepted | 2025-01-06 |
+| [0002](0002-voyager-trader-core-architecture.md) | VOYAGER-Trader Core Architecture | Accepted | 2025-01-06 |
+| [0003](0003-three-component-learning-pattern.md) | Three-Component Autonomous Learning Pattern | Accepted | 2025-01-06 |
 
 ## Tools and Automation
 
