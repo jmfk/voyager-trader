@@ -191,9 +191,9 @@ class CurriculumPersistenceService:
             "progress_percentage": float(task.progress_percentage),
             "created_at": task.created_at.isoformat() if task.created_at else None,
             "started_at": task.started_at.isoformat() if task.started_at else None,
-            "completed_at": task.completed_at.isoformat()
-            if task.completed_at
-            else None,
+            "completed_at": (
+                task.completed_at.isoformat() if task.completed_at else None
+            ),
         }
 
 
@@ -418,22 +418,28 @@ class ResumableCurriculumService(AutomaticCurriculumService):
             required_skills=task_data["required_skills"],
             parameters=task_data["parameters"],
             progress_percentage=Decimal(str(task_data["progress_percentage"])),
-            created_at=datetime.fromisoformat(task_data["created_at"])
-            if task_data["created_at"]
-            else None,
-            started_at=datetime.fromisoformat(task_data["started_at"])
-            if task_data["started_at"]
-            else None,
-            completed_at=datetime.fromisoformat(task_data["completed_at"])
-            if task_data["completed_at"]
-            else None,
+            created_at=(
+                datetime.fromisoformat(task_data["created_at"])
+                if task_data["created_at"]
+                else None
+            ),
+            started_at=(
+                datetime.fromisoformat(task_data["started_at"])
+                if task_data["started_at"]
+                else None
+            ),
+            completed_at=(
+                datetime.fromisoformat(task_data["completed_at"])
+                if task_data["completed_at"]
+                else None
+            ),
             updated_at=datetime.utcnow(),
         )
 
 
 # Factory function for easy instantiation
 def create_curriculum_service(
-    config: Dict[str, Any] = None
+    config: Dict[str, Any] = None,
 ) -> ResumableCurriculumService:
     """
     Factory function to create a fully configured curriculum service.

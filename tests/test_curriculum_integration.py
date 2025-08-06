@@ -161,7 +161,6 @@ def test_market_context_analyzer():
     except Exception as e:
         # If model creation fails due to validation, that's expected in this test
         print(f"Model creation failed (expected): {e}")
-        pass
 
 
 def test_curriculum_service_creation():
