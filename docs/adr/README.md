@@ -100,6 +100,11 @@ When superseding an ADR, always include a "Migration Path" section with:
 | [0001](0001-record-architecture-decisions.md) | Record Architecture Decisions | Accepted | 2025-01-06 |
 | [0002](0002-voyager-trader-core-architecture.md) | VOYAGER-Trader Core Architecture | Accepted | 2025-01-06 |
 | [0003](0003-three-component-learning-pattern.md) | Three-Component Autonomous Learning Pattern | Accepted | 2025-01-06 |
+| [0004](0004-dependency-injection-framework.md) | Dependency Injection Framework | Proposed | 2025-08-06 |
+| [0005](0005-configuration-management.md) | Configuration Management Approach | Proposed | 2025-08-06 |
+| [0006](0006-logging-and-monitoring.md) | Logging and Monitoring Strategy | Proposed | 2025-08-06 |
+| [0007](0007-error-handling-fault-tolerance.md) | Error Handling and Fault Tolerance Patterns | Proposed | 2025-08-06 |
+| [0008](0008-data-persistence-layer.md) | Data Persistence Layer Design | Proposed | 2025-08-06 |
 
 ## Tools and Automation
 
