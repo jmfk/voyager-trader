@@ -369,7 +369,8 @@ class Experience(BaseEntity):
         # Pattern based on outcome and market conditions
         if self.outcome == LearningOutcome.POSITIVE:
             patterns.append(
-                f"positive_outcome_with_{len(self.market_conditions)}_market_factors"
+                f"positive_outcome_with_{len(self.market_conditions)}_market_"
+                f"factors"
             )
 
         # Pattern based on skills used
@@ -696,7 +697,10 @@ class Performance(BaseEntity):
         return self.benchmark_comparisons.get(benchmark_name)
 
     def add_observation(
-        self, timestamp: datetime, metrics: Dict[str, Decimal], successful: bool = True
+        self,
+        timestamp: datetime,
+        metrics: Dict[str, Decimal],
+        successful: bool = True,
     ) -> "Performance":
         """Add a new performance observation."""
         new_total = self.total_observations + 1

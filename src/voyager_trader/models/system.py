@@ -232,7 +232,9 @@ class Task(BaseEntity):
         return self.update(progress_percentage=progress, feedback=new_feedback)
 
     def complete_task(
-        self, results: Dict[str, Any], lessons_learned: Optional[List[str]] = None
+        self,
+        results: Dict[str, Any],
+        lessons_learned: Optional[List[str]] = None,
     ) -> "Task":
         """Complete the task."""
         if not self.is_in_progress:
@@ -572,7 +574,8 @@ class Agent(BaseEntity):
         new_total = self.total_trades + 1
         new_successful = self.successful_trades + (1 if successful else 0)
         new_pnl = Money(
-            amount=self.total_pnl.amount + pnl.amount, currency=self.total_pnl.currency
+            amount=self.total_pnl.amount + pnl.amount,
+            currency=self.total_pnl.currency,
         )
 
         return self.update(
@@ -592,7 +595,8 @@ class Agent(BaseEntity):
         """Update performance metrics."""
         updated_metrics = {**self.performance_metrics, **metrics}
         return self.update(
-            performance_metrics=updated_metrics, last_activity=datetime.utcnow()
+            performance_metrics=updated_metrics,
+            last_activity=datetime.utcnow(),
         )
 
     def get_agent_summary(self) -> Dict[str, Any]:
@@ -626,7 +630,8 @@ class Curriculum(AggregateRoot):
     agent_id: str = Field(description="Associated agent ID")
     strategy: CurriculumStrategy = Field(description="Curriculum strategy")
     current_difficulty: DifficultyLevel = Field(
-        default=DifficultyLevel.BEGINNER, description="Current difficulty level"
+        default=DifficultyLevel.BEGINNER,
+        description="Current difficulty level",
     )
     target_skills: List[str] = Field(description="Target skills to develop")
     completed_skills: List[str] = Field(

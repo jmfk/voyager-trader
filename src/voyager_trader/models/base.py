@@ -142,7 +142,8 @@ class DomainEvent(VoyagerBaseModel):
         description="Unique identifier for the event",
     )
     occurred_at: datetime = Field(
-        default_factory=datetime.utcnow, description="Timestamp when the event occurred"
+        default_factory=datetime.utcnow,
+        description="Timestamp when the event occurred",
     )
     aggregate_id: str = Field(
         description="ID of the aggregate that generated the event"

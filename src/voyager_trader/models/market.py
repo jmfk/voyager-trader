@@ -56,12 +56,14 @@ class OHLCV(ValueObject):
 
     def model_post_init(self, __context) -> None:
         """Validate OHLC relationships after initialization."""
+        # First check that low <= high
+        if not (self.low <= self.high):
+            raise ValueError("Low must be less than or equal to high")
+        # Then check that open and close are within the range
         if not (self.low <= self.open <= self.high):
             raise ValueError("Open price must be between low and high")
         if not (self.low <= self.close <= self.high):
             raise ValueError("Close price must be between low and high")
-        if not (self.low <= self.high):
-            raise ValueError("Low must be less than or equal to high")
 
     @property
     def typical_price(self) -> Decimal:
@@ -114,11 +116,11 @@ class OHLCV(ValueObject):
     @property
     def is_doji(self) -> bool:
         """Check if the bar is a doji (open ≈ close)."""
-        # Consider doji if body is less than 0.1% of the range
+        # Consider doji if body is less than 10% of the range
         range_size = self.high - self.low
         if range_size == 0:
             return True
-        return (self.body_size / range_size) < Decimal("0.001")
+        return (self.body_size / range_size) < Decimal("0.1")
 
 
 class TickData(ValueObject):

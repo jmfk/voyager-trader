@@ -1,9 +1,9 @@
 """
 VOYAGER-Trader Domain Models.
 
-This package provides comprehensive domain models for the VOYAGER-Trader system,
-including market data, trading entities, strategies, learning components, and
-VOYAGER system models.
+This package provides comprehensive domain models for the VOYAGER-Trader
+system, including market data, trading entities, strategies, learning
+components, and VOYAGER system models.
 
 The models are organized into the following modules:
 - base: Base classes and infrastructure
@@ -203,6 +203,7 @@ def get_model_info() -> dict:
             "system_models": 10,
         },
         "description": (
-            "Comprehensive domain models for VOYAGER-Trader autonomous trading system"
+            "Comprehensive domain models for VOYAGER-Trader autonomous "
+            "trading system"
         ),
     }
