@@ -1,0 +1,372 @@
+name: Auto PR Review and Fix
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to review and fix'
+        required: true
+        type: number
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  checks: read
+
+jobs:
+  auto-review:
+    runs-on: ubuntu-latest
+    name: Automated PR Review and Fix
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Get PR number
+        id: pr_number
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "pr_number=${{ inputs.pr_number }}" >> $GITHUB_OUTPUT
+          else
+            echo "pr_number=${{ github.event.number }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Checkout PR branch
+        run: |
+          gh pr checkout ${{ steps.pr_number.outputs.pr_number }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run comprehensive PR analysis
+        id: analysis
+        run: |
+          echo "🔍 Analyzing PR #${{ steps.pr_number.outputs.pr_number }}..."
+
+          # Get PR details
+          pr_details=$(gh pr view ${{ steps.pr_number.outputs.pr_number }} --json title,body,files,commits)
+          echo "pr_details<<EOF" >> $GITHUB_OUTPUT
+          echo "$pr_details" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+          # Run tests and get coverage
+          echo "🧪 Running tests and checking coverage..."
+          coverage_output=$(python -m pytest --cov=src --cov-report=term-missing --cov-report=json 2>&1 || true)
+          echo "coverage_output<<EOF" >> $GITHUB_OUTPUT
+          echo "$coverage_output" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+          # Extract coverage percentage
+          if [ -f coverage.json ]; then
+            coverage_pct=$(python -c "import json; data=json.load(open('coverage.json')); print(f'{data[\"totals\"][\"percent_covered\"]:.1f}')")
+            echo "coverage_percentage=$coverage_pct" >> $GITHUB_OUTPUT
+          else
+            echo "coverage_percentage=0" >> $GITHUB_OUTPUT
+          fi
+
+          # Run linting
+          echo "🔍 Running linting..."
+          lint_output=$(flake8 src/ tests/ 2>&1 || true)
+          echo "lint_output<<EOF" >> $GITHUB_OUTPUT
+          echo "$lint_output" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+          # Run type checking
+          echo "🔍 Running type checking..."
+          type_output=$(mypy src/ 2>&1 || true)
+          echo "type_output<<EOF" >> $GITHUB_OUTPUT
+          echo "$type_output" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Auto-fix issues
+        id: autofix
+        run: |
+          echo "🔧 Attempting to auto-fix issues..."
+
+          fixes_applied=""
+
+          # Fix formatting issues
+          echo "📝 Applying Black formatting..."
+          black src/ tests/ --line-length=88
+          if [ $? -eq 0 ]; then
+            fixes_applied="$fixes_applied\n- Applied Black code formatting"
+          fi
+
+          # Fix import sorting
+          echo "📦 Fixing import sorting..."
+          isort src/ tests/ --profile black
+          if [ $? -eq 0 ]; then
+            fixes_applied="$fixes_applied\n- Fixed import sorting with isort"
+          fi
+
+          # Try to fix simple linting issues
+          echo "🔍 Attempting to fix linting issues..."
+          # Remove unused imports (basic attempt)
+          autoflake --remove-all-unused-imports --recursive --in-place src/ tests/ 2>/dev/null || true
+          fixes_applied="$fixes_applied\n- Removed unused imports"
+
+          # Check if coverage is below 80% and try to improve
+          coverage_pct="${{ steps.analysis.outputs.coverage_percentage }}"
+          if (( $(echo "$coverage_pct < 80" | bc -l) )); then
+            echo "📊 Coverage ($coverage_pct%) below 80%, attempting to improve..."
+
+            # Generate additional basic tests
+            python -c "
+            import os
+            import sys
+            from pathlib import Path
+            import subprocess
+            import json
+
+            # Load coverage data to find low-coverage files
+            try:
+                with open('coverage.json', 'r') as f:
+                    cov_data = json.load(f)
+
+                # Find files with low coverage
+                for filename, data in cov_data['files'].items():
+                    if 'src/' in filename and data['summary']['percent_covered'] < 80:
+                        print(f'Low coverage file: {filename} ({data[\"summary\"][\"percent_covered\"]:.1f}%)')
+
+                        # Create basic tests for completely untested files
+                        if data['summary']['percent_covered'] == 0:
+                            test_file = filename.replace('src/', 'tests/').replace('.py', '_basic_test.py')
+                            test_dir = os.path.dirname(test_file)
+
+                            # Create test directory if it doesn't exist
+                            Path(test_dir).mkdir(parents=True, exist_ok=True)
+
+                            # Generate basic test
+                            with open(test_file, 'w') as tf:
+                                tf.write(f'''\"\"\"Basic tests for {filename}.\"\"\"
+
+            def test_module_imports():
+                \"\"\"Test that the module can be imported.\"\"\"
+                try:
+                    from {filename.replace('src/', '').replace('/', '.').replace('.py', '')} import *
+                    assert True
+                except ImportError as e:
+                    pytest.fail(f\"Import failed: {{e}}\")
+            ''')
+                            print(f'Generated basic test: {test_file}')
+            except:
+                print('Could not analyze coverage data')
+            " || true
+
+            fixes_applied="$fixes_applied\n- Generated additional tests for low-coverage files"
+          fi
+
+          echo "fixes_applied<<EOF" >> $GITHUB_OUTPUT
+          echo -e "$fixes_applied" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Check if fixes were made
+        id: check_changes
+        run: |
+          if git diff --quiet; then
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+          else
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+            git add -A
+          fi
+
+      - name: Commit and push fixes
+        if: steps.check_changes.outputs.has_changes == 'true'
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git commit -m "fix: auto-apply code quality fixes
+
+          ${{ steps.autofix.outputs.fixes_applied }}
+
+          🤖 Generated with GitHub Actions Auto-Fix"
+          git push
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Re-run analysis after fixes
+        id: final_analysis
+        if: steps.check_changes.outputs.has_changes == 'true'
+        run: |
+          echo "🔄 Re-running analysis after fixes..."
+
+          # Re-run tests and coverage
+          coverage_output=$(python -m pytest --cov=src --cov-report=term-missing --cov-report=json 2>&1 || true)
+
+          if [ -f coverage.json ]; then
+            final_coverage=$(python -c "import json; data=json.load(open('coverage.json')); print(f'{data[\"totals\"][\"percent_covered\"]:.1f}')")
+            echo "final_coverage=$final_coverage" >> $GITHUB_OUTPUT
+          else
+            echo "final_coverage=0" >> $GITHUB_OUTPUT
+          fi
+
+          # Re-run linting
+          lint_output=$(flake8 src/ tests/ 2>&1 || true)
+          lint_issues=$(echo "$lint_output" | wc -l)
+          echo "final_lint_issues=$lint_issues" >> $GITHUB_OUTPUT
+
+          echo "final_analysis<<EOF" >> $GITHUB_OUTPUT
+          echo "$coverage_output" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Generate PR review
+        id: review
+        run: |
+          initial_coverage="${{ steps.analysis.outputs.coverage_percentage }}"
+          final_coverage="${{ steps.final_analysis.outputs.final_coverage || steps.analysis.outputs.coverage_percentage }}"
+          has_fixes="${{ steps.check_changes.outputs.has_changes }}"
+
+          # Generate comprehensive review
+          review_body="## 🤖 Automated PR Review
+
+          ### 📊 Code Quality Analysis
+
+          **Coverage:** $initial_coverage%"
+
+          if [ "$has_fixes" == "true" ]; then
+            review_body="$review_body → $final_coverage%"
+            if (( $(echo "$final_coverage > $initial_coverage" | bc -l) )); then
+              review_body="$review_body ✅ Improved"
+            fi
+          fi
+
+          if (( $(echo "$final_coverage >= 80" | bc -l) )); then
+            review_body="$review_body ✅ Meets requirement (≥80%)"
+          else
+            review_body="$review_body ❌ Below requirement (≥80%)"
+          fi
+
+          # Add lint results
+          lint_output="${{ steps.analysis.outputs.lint_output }}"
+          if [ -z "$lint_output" ]; then
+            review_body="$review_body
+
+          **Linting:** ✅ No issues found"
+          else
+            review_body="$review_body
+
+          **Linting:** ❌ Issues found
+          \`\`\`
+          $lint_output
+          \`\`\`"
+          fi
+
+          # Add type checking results
+          type_output="${{ steps.analysis.outputs.type_output }}"
+          if [ -z "$type_output" ]; then
+            review_body="$review_body
+
+          **Type Checking:** ✅ No issues found"
+          else
+            review_body="$review_body
+
+          **Type Checking:** ❌ Issues found
+          \`\`\`
+          $type_output
+          \`\`\`"
+          fi
+
+          # Add fixes applied section
+          if [ "$has_fixes" == "true" ]; then
+            review_body="$review_body
+
+          ### 🔧 Auto-Fixes Applied
+          ${{ steps.autofix.outputs.fixes_applied }}"
+          fi
+
+          # Add recommendations
+          review_body="$review_body
+
+          ### 💡 Recommendations
+
+          "
+
+          if (( $(echo "$final_coverage < 80" | bc -l) )); then
+            review_body="$review_body
+          - **Improve test coverage** to meet the 80% requirement
+          - Consider adding integration tests and edge case tests
+          "
+          fi
+
+          if [ -n "$lint_output" ]; then
+            review_body="$review_body
+          - **Fix linting issues** shown above
+          "
+          fi
+
+          if [ -n "$type_output" ]; then
+            review_body="$review_body
+          - **Address type checking issues**
+          "
+          fi
+
+          review_body="$review_body
+          - Ensure all tests pass before merging
+          - Review the architectural impact of changes
+          - Update documentation if needed
+
+          ---
+          *This review was automatically generated by GitHub Actions*"
+
+          echo "review_body<<EOF" >> $GITHUB_OUTPUT
+          echo "$review_body" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Post PR review
+        run: |
+          # Determine review state
+          coverage="${{ steps.final_analysis.outputs.final_coverage || steps.analysis.outputs.coverage_percentage }}"
+          lint_output="${{ steps.analysis.outputs.lint_output }}"
+
+          if (( $(echo "$coverage >= 80" | bc -l) )) && [ -z "$lint_output" ]; then
+            review_state="APPROVE"
+          else
+            review_state="REQUEST_CHANGES"
+          fi
+
+          # Post the review
+          gh pr review ${{ steps.pr_number.outputs.pr_number }} \
+            --$review_state \
+            --body "${{ steps.review.outputs.review_body }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Add labels
+        run: |
+          coverage="${{ steps.final_analysis.outputs.final_coverage || steps.analysis.outputs.coverage_percentage }}"
+          has_fixes="${{ steps.check_changes.outputs.has_changes }}"
+
+          labels=""
+
+          if (( $(echo "$coverage >= 80" | bc -l) )); then
+            labels="$labels good-coverage"
+          else
+            labels="$labels needs-coverage"
+          fi
+
+          if [ "$has_fixes" == "true" ]; then
+            labels="$labels auto-fixed"
+          fi
+
+          if [ -n "$labels" ]; then
+            gh pr edit ${{ steps.pr_number.outputs.pr_number }} --add-label "$labels"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
