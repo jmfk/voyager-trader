@@ -12,10 +12,14 @@ These components implement the interfaces defined in curriculum.py.
 """
 
 import logging
+import time
 from datetime import datetime
 from decimal import Decimal
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
+
+from pydantic import BaseModel, Field, field_validator
 
 from .curriculum import (
     AdaptationTrigger,
@@ -36,6 +40,156 @@ from .models.system import (
     TaskType,
 )
 
+# Utility functions for input sanitization and security
+
+
+def _validate_path_input(path: str) -> str:
+    """Validate input path parameters."""
+    if not isinstance(path, str):
+        raise ValueError("Path must be a string")
+    if not path.strip():
+        raise ValueError("Path cannot be empty")
+    return "".join(char for char in path if ord(char) >= 32)
+
+
+def _check_directory_traversal(sanitized_path: Path, base_dir: Optional[Path]) -> None:
+    """Check for directory traversal attempts."""
+    if ".." in str(sanitized_path):
+        if base_dir is None:
+            raise ValueError("Directory traversal not allowed without base directory")
+
+
+def _constrain_to_base_dir(sanitized_path: Path, base_dir: Path) -> Path:
+    """Constrain path to base directory."""
+    try:
+        base_resolved = base_dir.resolve()
+        if not str(sanitized_path).startswith(str(base_resolved)):
+            sanitized_path = base_resolved / Path(sanitized_path).name
+    except (OSError, ValueError) as e:
+        raise ValueError(f"Invalid base directory: {e}")
+    return sanitized_path
+
+
+def sanitize_file_path(path: str, base_dir: Optional[Path] = None) -> Path:
+    """
+    Sanitize file path to prevent directory traversal attacks.
+
+    Args:
+        path: Input path string
+        base_dir: Base directory to restrict path to (optional)
+
+    Returns:
+        Sanitized Path object
+
+    Raises:
+        ValueError: If path is invalid or attempts directory traversal
+    """
+    # Validate and clean input
+    cleaned_path = _validate_path_input(path)
+
+    # Convert to Path object and resolve
+    try:
+        sanitized_path = Path(cleaned_path).resolve()
+    except (OSError, ValueError) as e:
+        raise ValueError(f"Invalid path: {e}")
+
+    # Security checks
+    _check_directory_traversal(sanitized_path, base_dir)
+
+    # Constrain to base directory if provided
+    if base_dir is not None:
+        sanitized_path = _constrain_to_base_dir(sanitized_path, base_dir)
+
+    return sanitized_path
+
+
+class CurriculumConfig(BaseModel):
+    """Configuration for curriculum components with validation."""
+
+    # Market analysis settings
+    volatility_threshold_high: Decimal = Field(default=Decimal("0.3"), ge=0.0, le=1.0)
+    volatility_threshold_low: Decimal = Field(default=Decimal("0.1"), ge=0.0, le=1.0)
+    trend_strength_threshold: Decimal = Field(default=Decimal("0.5"), ge=0.0, le=1.0)
+
+    # Performance tracking settings
+    success_rate_improvement_threshold: Decimal = Field(
+        default=Decimal("0.85"), ge=0.5, le=1.0
+    )
+    success_rate_decline_threshold: Decimal = Field(
+        default=Decimal("0.4"), ge=0.0, le=0.7
+    )
+    learning_plateau_threshold: int = Field(default=5, ge=3, le=20)
+
+    # Adaptation settings
+    adaptation_frequency: int = Field(
+        default=3, ge=1, le=10
+    )  # tasks between adaptations
+    difficulty_step_size: Decimal = Field(default=Decimal("0.1"), ge=0.01, le=0.5)
+
+    # File system settings
+    storage_base_path: str = Field(default="./curriculum_data")
+    max_history_entries: int = Field(default=1000, ge=100, le=10000)
+
+    # Template selection strategies
+    template_selection_strategy: str = Field(
+        default="balanced", pattern=r"^(balanced|aggressive|conservative|adaptive)$"
+    )
+
+    # Caching settings
+    enable_caching: bool = Field(default=True)
+    cache_ttl_seconds: int = Field(default=300, ge=60, le=3600)  # 1-60 minutes
+
+    @field_validator("storage_base_path")
+    @classmethod
+    def validate_storage_path(cls, v):
+        """Validate and sanitize storage path."""
+        try:
+            sanitized = sanitize_file_path(v)
+            return str(sanitized)
+        except ValueError as e:
+            raise ValueError(f"Invalid storage path: {e}")
+
+    model_config = {"validate_assignment": True}
+
+
+class CurriculumCache:
+    """Simple in-memory cache for curriculum component performance optimization."""
+
+    def __init__(self, ttl_seconds: int = 300):
+        """Initialize cache with time-to-live in seconds."""
+        self.cache: Dict[str, Dict[str, Any]] = {}
+        self.ttl = ttl_seconds
+
+    def get(self, key: str) -> Optional[Any]:
+        """Get cached value if it exists and hasn't expired."""
+        if key in self.cache:
+            entry = self.cache[key]
+            if time.time() - entry["timestamp"] < self.ttl:
+                return entry["value"]
+            else:
+                # Expired, remove from cache
+                del self.cache[key]
+        return None
+
+    def set(self, key: str, value: Any) -> None:
+        """Set cached value with current timestamp."""
+        self.cache[key] = {"value": value, "timestamp": time.time()}
+
+    def clear(self) -> None:
+        """Clear all cached values."""
+        self.cache.clear()
+
+    def cleanup_expired(self) -> None:
+        """Remove expired entries from cache."""
+        current_time = time.time()
+        expired_keys = [
+            key
+            for key, entry in self.cache.items()
+            if current_time - entry["timestamp"] >= self.ttl
+        ]
+        for key in expired_keys:
+            del self.cache[key]
+
 
 class BasicCurriculumGenerator:
     """
@@ -46,8 +200,13 @@ class BasicCurriculumGenerator:
 
     def __init__(self, config: Dict[str, Any]):
         """Initialize with configuration."""
-        self.config = config
+        self.config = CurriculumConfig(**config) if isinstance(config, dict) else config
         self.logger = logging.getLogger(__name__)
+        self.cache = (
+            CurriculumCache(ttl_seconds=self.config.cache_ttl_seconds)
+            if self.config.enable_caching
+            else None
+        )
         self._initialize_task_templates()
 
     def _initialize_task_templates(self) -> None:
@@ -235,12 +394,30 @@ class BasicCurriculumGenerator:
         self, agent: Agent, curriculum: Curriculum, context: MarketContext
     ) -> Optional[Task]:
         """Generate next appropriate task for the agent."""
-        self.logger.info(
-            f"Generating task for difficulty: {curriculum.current_difficulty}"
+        self.logger.info(f"Generating task for agent {agent.name}")
+        self.logger.debug(
+            f"Current difficulty: {curriculum.current_difficulty}, "
+            f"agent skills: {len(agent.learned_skills)}, "
+            f"market conditions: {context.conditions}"
         )
+
+        # Check cache first if enabled
+        cache_key = (
+            f"{agent.id}_{curriculum.current_difficulty}_"
+            f"{hash(str(context.conditions))}"
+        )
+        if self.cache:
+            cached_task = self.cache.get(cache_key)
+            if cached_task:
+                self.logger.debug(f"Retrieved task from cache: {cache_key}")
+                return cached_task
 
         # Get templates for current difficulty
         templates = self.get_task_templates(curriculum.current_difficulty)
+        self.logger.debug(
+            f"Found {len(templates)} templates for "
+            f"difficulty {curriculum.current_difficulty}"
+        )
 
         # Filter templates by market conditions
         suitable_templates = [
@@ -263,8 +440,10 @@ class BasicCurriculumGenerator:
             self.logger.warning("No templates with satisfied prerequisites")
             return None
 
-        # Select template (for now, take first available)
-        template = available_templates[0]
+        # Select template based on configured strategy
+        template = self._select_template_by_strategy(
+            available_templates, agent, context
+        )
 
         # Generate task from template
         task = self._create_task_from_template(template, agent, context)
@@ -316,6 +495,39 @@ class BasicCurriculumGenerator:
             created_at=datetime.utcnow(),
             updated_at=datetime.utcnow(),
         )
+
+    def _select_template_by_strategy(
+        self, templates: List[TaskTemplate], agent: Agent, context: MarketContext
+    ) -> TaskTemplate:
+        """Select template based on configured strategy."""
+        strategy = self.config.template_selection_strategy
+
+        if strategy == "balanced":
+            # Select template with balanced difficulty progression
+            return (
+                templates[len(templates) // 2] if len(templates) > 1 else templates[0]
+            )
+        elif strategy == "aggressive":
+            # Select most challenging template
+            return max(
+                templates, key=lambda t: len(t.objectives) + len(t.required_skills)
+            )
+        elif strategy == "conservative":
+            # Select easiest template with fewest requirements
+            return min(
+                templates, key=lambda t: len(t.objectives) + len(t.required_skills)
+            )
+        elif strategy == "adaptive":
+            # Select based on agent's recent performance
+            if agent.task_completion_rate > 0.8:
+                return max(templates, key=lambda t: len(t.objectives))
+            elif agent.task_completion_rate < 0.5:
+                return min(templates, key=lambda t: len(t.objectives))
+            else:
+                return templates[0]
+        else:
+            # Default to first available
+            return templates[0]
 
 
 class StandardDifficultyAssessor:

@@ -115,7 +115,7 @@ class SkillLibrary:
                     data = json.load(f)
                     skill = TradingSkill(**data)
                     self.skills[skill.name] = skill
-            except Exception as e:
+            except (json.JSONDecodeError, KeyError, TypeError, OSError) as e:
                 self.logger.error(f"Failed to load skill from {skill_file}: {e}")
 
     def _save_skill(self, skill: TradingSkill) -> None:
@@ -135,5 +135,5 @@ class SkillLibrary:
                     "tags": skill.tags,
                 }
                 json.dump(skill_dict, f, indent=2)
-        except Exception as e:
+        except (OSError, json.JSONEncodeError, TypeError) as e:
             self.logger.error(f"Failed to save skill {skill.name}: {e}")

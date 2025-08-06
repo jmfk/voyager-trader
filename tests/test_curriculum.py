@@ -95,7 +95,7 @@ class TestPerformanceAnalysis:
     def test_performance_analysis_creation(self):
         """Test creating performance analysis."""
         analysis = PerformanceAnalysis(
-            success_rate=Decimal("75.5"),
+            success_rate=Decimal("0.755"),
             improvement_trend="improving",
             learning_velocity=Decimal("0.3"),
             strengths=["execution", "risk_management"],
@@ -104,7 +104,7 @@ class TestPerformanceAnalysis:
             confidence_level=Decimal("0.85"),
         )
 
-        assert analysis.success_rate == Decimal("75.5")
+        assert analysis.success_rate == Decimal("0.755")
         assert analysis.improvement_trend == "improving"
         assert len(analysis.strengths) == 2
         assert len(analysis.weaknesses) == 1
