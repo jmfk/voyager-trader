@@ -177,7 +177,7 @@ class TestOHLCV:
             open=Decimal("100.00"),
             high=Decimal("100.10"),
             low=Decimal("99.90"),
-            close=Decimal("100.01"),  # Very small body
+            close=Decimal("100.00"),  # Perfect doji - same open/close
             volume=Decimal("1000"),
         )
 

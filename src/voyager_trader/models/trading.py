@@ -612,7 +612,8 @@ class Portfolio(AggregateRoot):
     def is_valid(self) -> bool:
         """Check if portfolio is in a valid state."""
         # Portfolio is valid if total value equals cash + position values
-        # This is a simplified check - real implementation would sum position values
+        # This is a simplified check - real implementation would sum position
+        # values
         return self.total_value.amount >= 0 and self.cash_balance.amount >= 0
 
     def get_domain_events(self) -> List[DomainEvent]:
@@ -648,7 +649,8 @@ class Portfolio(AggregateRoot):
 
         # Update realized P&L
         new_realized_pnl = Money(
-            amount=self.realized_pnl.amount + pnl.amount, currency=self.base_currency
+            amount=self.realized_pnl.amount + pnl.amount,
+            currency=self.base_currency,
         )
 
         event = PositionClosed(

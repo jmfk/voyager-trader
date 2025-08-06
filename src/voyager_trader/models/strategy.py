@@ -130,7 +130,10 @@ class Signal(BaseEntity):
     @property
     def is_buy_signal(self) -> bool:
         """Check if this is a buy signal."""
-        return self.signal_type in {SignalType.BUY, SignalType.INCREASE_POSITION}
+        return self.signal_type in {
+            SignalType.BUY,
+            SignalType.INCREASE_POSITION,
+        }
 
     @property
     def is_sell_signal(self) -> bool:
