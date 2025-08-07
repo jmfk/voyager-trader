@@ -1330,9 +1330,7 @@ result = execute_composed_strategy(inputs, context)
                     else (
                         2
                         if skill.complexity == SkillComplexity.INTERMEDIATE
-                        else 3
-                        if skill.complexity == SkillComplexity.ADVANCED
-                        else 4
+                        else 3 if skill.complexity == SkillComplexity.ADVANCED else 4
                     )
                 )
                 for skill in skills
@@ -2869,9 +2867,11 @@ class VoyagerSkillLibrary:
 
             return {
                 "healthy": is_valid,
-                "message": "Validator responding normally"
-                if is_valid
-                else "Validation issues detected",
+                "message": (
+                    "Validator responding normally"
+                    if is_valid
+                    else "Validation issues detected"
+                ),
                 "details": {
                     "test_validation_result": is_valid,
                     "validation_errors": validation_errors if not is_valid else [],
