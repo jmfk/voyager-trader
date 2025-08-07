@@ -37,9 +37,13 @@ jobs:
           OLD=${{ steps.get_tag.outputs.latest_tag }}
           echo "Current highest version: $OLD"
 
-          # Remove 'v' prefix and split version
-          OLD=${OLD#v}
-          IFS='.' read -r MAJOR MINOR PATCH <<< "$OLD"
+          # Remove all leading 't' characters to fix corrupted tags like 'tt0.0.1' or 'ttt0.0.2'
+          # This handles both correct tags (t0.0.0) and corrupted ones (tt0.0.1, ttt0.0.2)
+          CLEANED_TAG=$(echo "$OLD" | sed 's/^t*//')
+          echo "Cleaned tag (removed all leading 't'): $CLEANED_TAG"
+
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CLEANED_TAG"
+          echo "Parsed - MAJOR: $MAJOR, MINOR: $MINOR, PATCH: $PATCH"
 
           # Increment patch version (lowest version number)
           PATCH=$((PATCH + 1))
