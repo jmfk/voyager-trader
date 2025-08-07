@@ -36,18 +36,18 @@ jobs:
         run: |
           OLD=${{ steps.get_tag.outputs.latest_tag }}
           echo "Current highest version: $OLD"
-          
+
           # Remove 'v' prefix and split version
           OLD=${OLD#v}
           IFS='.' read -r MAJOR MINOR PATCH <<< "$OLD"
-          
+
           # Increment patch version (lowest version number)
           PATCH=$((PATCH + 1))
           NEW_TAG="t$MAJOR.$MINOR.$PATCH"
-          
+
           echo "new_tag=$NEW_TAG" >> $GITHUB_OUTPUT
           echo "Next version will be: $NEW_TAG"
-           
+
       - name: Push tag with PAT
         run: |
           git tag ${{ steps.bump_version.outputs.new_tag }}
