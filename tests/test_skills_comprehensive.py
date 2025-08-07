@@ -247,8 +247,12 @@ class TestSkillValidators:
         """Set up test fixtures."""
         self.syntax_validator = SyntaxValidator()
         self.security_validator = SecurityValidator()
-        self.performance_validator = PerformanceValidator()
-        self.composite_validator = CompositeSkillValidator()
+        self.performance_validator = PerformanceValidator(
+            legacy_compatible=False
+        )  # Strict for testing
+        self.composite_validator = CompositeSkillValidator(
+            legacy_compatible=False
+        )  # Strict for testing
 
     def test_syntax_validator_valid_code(self):
         """Test syntax validator with valid code."""
