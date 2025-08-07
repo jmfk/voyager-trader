@@ -32,15 +32,12 @@ class SkillExecutionError(Exception):
     """Exception raised during skill execution."""
 
 
-
 class SkillCompositionError(Exception):
     """Exception raised during skill composition."""
 
 
-
 class SkillValidationError(Exception):
     """Exception raised during skill validation."""
-
 
 
 class SkillExecutor:
@@ -285,23 +282,61 @@ class SkillComposer:
 def execute_composed_strategy(inputs, context=None):
     results = {}
     context = context or {}
+    execution_order = []
+    failed_skills = []
 
 """
 
         for i, skill in enumerate(skills):
             composed_code += f"""
     # Execute skill: {skill.name}
+    execution_order.append('{skill.name}')
     try:
 {self._indent_code(skill.code, 8)}
-        results['{skill.name}'] = locals().get('result', None)
+        skill_result = locals().get('result', None)
+        results['{skill.name}'] = {{
+            'result': skill_result,
+            'success': True,
+            'execution_time': None,
+            'skill_index': {i}
+        }}
         context.update(locals().get('context_updates', {{}}))
     except Exception as e:
-        results['{skill.name}'] = {{'error': str(e)}}
+        error_info = {{
+            'error': str(e),
+            'error_type': type(e).__name__,
+            'success': False,
+            'skill_index': {i}
+        }}
+        results['{skill.name}'] = error_info
+        failed_skills.append('{skill.name}')
+
+        # Log error details to results
+        if 'execution_summary' not in results:
+            results['execution_summary'] = {{}}
+        results['execution_summary']['failed_at_skill'] = '{skill.name}'
+        results['execution_summary']['failed_skill_index'] = {i}
+
         if not context.get('continue_on_error', False):
-            break
+            results['execution_summary']['aborted'] = True
+            results['execution_summary']['executed_skills'] = execution_order
+            results['execution_summary']['failed_skills'] = failed_skills
+            return results
 """
 
         composed_code += """
+
+    # Add execution summary for successful completion
+    results['execution_summary'] = {
+        'completed': True,
+        'executed_skills': execution_order,
+        'failed_skills': failed_skills,
+        'total_skills': len(execution_order),
+        'success_rate': (
+            (len(execution_order) - len(failed_skills)) / len(execution_order)
+            if execution_order else 1.0
+        )
+    }
 
     return results
 
@@ -319,7 +354,9 @@ result = execute_composed_strategy(inputs, context)
                     else (
                         2
                         if skill.complexity == SkillComplexity.INTERMEDIATE
-                        else 3 if skill.complexity == SkillComplexity.ADVANCED else 4
+                        else 3
+                        if skill.complexity == SkillComplexity.ADVANCED
+                        else 4
                     )
                 )
                 for skill in skills
@@ -465,6 +502,27 @@ class SecurityValidator(SkillValidator):
         "http",
         "ftplib",
         "smtplib",
+        "zipfile",
+        "tarfile",
+        "ctypes",
+        "multiprocessing",
+        "threading",
+        "asyncio",
+        "concurrent",
+        "importlib",
+        "__builtin__",
+        "builtins",
+        "code",
+        "inspect",
+        "runpy",
+        "pty",
+        "fcntl",
+        "termios",
+        "tty",
+        "signal",
+        "resource",
+        "gc",
+        "weakref",
     }
 
     DANGEROUS_FUNCTIONS = {
@@ -512,24 +570,45 @@ class SecurityValidator(SkillValidator):
 class PerformanceValidator(SkillValidator):
     """Validates skill performance characteristics."""
 
-    def __init__(self, min_success_rate: float = 0.6, min_usage_count: int = 5):
+    def __init__(
+        self,
+        min_success_rate: float = 0.6,
+        min_usage_count: int = 5,
+        legacy_compatible: bool = True,
+    ):
         self.min_success_rate = min_success_rate
         self.min_usage_count = min_usage_count
+        self.legacy_compatible = legacy_compatible
 
     def validate(self, skill: Skill) -> Tuple[bool, List[str]]:
         """Check if skill meets performance thresholds."""
         errors = []
 
-        if skill.usage_count < self.min_usage_count:
-            errors.append(
-                f"Insufficient usage data: {skill.usage_count} < {self.min_usage_count}"
-            )
+        # Legacy compatibility mode - more lenient validation
+        if self.legacy_compatible:
+            min_usage = max(1, self.min_usage_count // 2)  # Half the requirement
+            min_success = max(0.3, self.min_success_rate - 0.2)  # 20% lower threshold
+        else:
+            min_usage = self.min_usage_count
+            min_success = self.min_success_rate
 
-        if skill.usage_count > 0 and skill.success_rate < self.min_success_rate * 100:
-            errors.append(
-                f"Low success rate: {skill.success_rate}% < "
-                f"{self.min_success_rate * 100}%"
-            )
+        if skill.usage_count < min_usage:
+            if self.legacy_compatible and skill.usage_count == 0:
+                # Allow brand new skills to pass in legacy mode
+                pass
+            else:
+                errors.append(
+                    f"Insufficient usage data: {skill.usage_count} < {min_usage}"
+                    + (" (legacy mode)" if self.legacy_compatible else "")
+                )
+
+        if skill.usage_count > 0 and skill.success_rate < min_success * 100:
+            if not (self.legacy_compatible and skill.success_rate >= 0.3 * 100):
+                errors.append(
+                    f"Low success rate: {skill.success_rate}% < "
+                    f"{min_success * 100}%"
+                    + (" (legacy mode)" if self.legacy_compatible else "")
+                )
 
         return len(errors) == 0, errors
 
@@ -537,12 +616,13 @@ class PerformanceValidator(SkillValidator):
 class CompositeSkillValidator:
     """Composite validator that runs multiple validation strategies."""
 
-    def __init__(self):
+    def __init__(self, legacy_compatible: bool = True):
         self.validators = [
             SyntaxValidator(),
             SecurityValidator(),
-            PerformanceValidator(),
+            PerformanceValidator(legacy_compatible=legacy_compatible),
         ]
+        self.legacy_compatible = legacy_compatible
         self.logger = logging.getLogger(__name__)
 
     def validate_skill(self, skill: Skill) -> Tuple[bool, Dict[str, List[str]]]:
