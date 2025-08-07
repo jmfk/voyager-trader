@@ -600,11 +600,11 @@ class PerformanceValidator(SkillValidator):
                     + (" (legacy mode)" if self.legacy_compatible else "")
                 )
 
-        if skill.usage_count > 0 and skill.success_rate < min_success * 100:
-            if not (self.legacy_compatible and skill.success_rate >= 0.3 * 100):
+        if skill.usage_count > 0 and skill.success_rate < min_success:
+            if not (self.legacy_compatible and skill.success_rate >= 0.3):
                 errors.append(
-                    f"Low success rate: {skill.success_rate}% < "
-                    f"{min_success * 100}%"
+                    f"Low success rate: {skill.success_rate * 100:.1f}% < "
+                    f"{min_success * 100:.1f}%"
                     + (" (legacy mode)" if self.legacy_compatible else "")
                 )
 
@@ -1319,7 +1319,7 @@ class SkillLibrary:
             },
             usage_count=skill.usage_count,
             success_count=(
-                int(skill.success_rate * skill.usage_count / 100)
+                int(skill.success_rate * skill.usage_count)
                 if skill.usage_count > 0
                 else 0
             ),

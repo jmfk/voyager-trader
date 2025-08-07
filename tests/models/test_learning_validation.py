@@ -327,7 +327,7 @@ def test_performance_success_rate_calculation():
     )
 
     # Test success rate calculation
-    assert performance.success_rate == Decimal("75.0")  # 150/200 * 100
+    assert performance.success_rate == Decimal("0.75")  # 150/200
 
 
 def test_performance_success_rate_zero_observations():

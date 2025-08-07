@@ -486,7 +486,7 @@ class TestSkillLibrarian:
         self.librarian.store_skill(self.skill1)
         self.librarian.store_skill(self.skill2)
 
-        high_performing_skills = self.librarian.search_skills(min_success_rate=85.0)
+        high_performing_skills = self.librarian.search_skills(min_success_rate=0.85)
         assert len(high_performing_skills) == 1
         assert high_performing_skills[0].name == "risk_skill"
 
@@ -881,7 +881,7 @@ class TestLegacyCompatibility:
         assert results[0].name == "legacy_test_skill"
 
         # Search by success rate
-        results = self.legacy_library.search_skills(min_success_rate=75.0)
+        results = self.legacy_library.search_skills(min_success_rate=0.75)
         assert len(results) == 1
 
     def test_legacy_skill_composition(self):

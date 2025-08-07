@@ -125,10 +125,10 @@ class Skill(BaseEntity):
     @computed_field
     @property
     def success_rate(self) -> Decimal:
-        """Calculate success rate percentage."""
+        """Calculate success rate as a fraction (0-1)."""
         if self.usage_count == 0:
             return Decimal("0")
-        return (Decimal(str(self.success_count)) / Decimal(str(self.usage_count))) * 100
+        return Decimal(str(self.success_count)) / Decimal(str(self.usage_count))
 
     @computed_field
     @property
@@ -644,13 +644,12 @@ class Performance(BaseEntity):
     @computed_field
     @property
     def success_rate(self) -> Decimal:
-        """Calculate success rate percentage."""
+        """Calculate success rate as a fraction (0-1)."""
         if self.total_observations == 0:
             return Decimal("0")
-        return (
-            Decimal(str(self.successful_observations))
-            / Decimal(str(self.total_observations))
-        ) * 100
+        return Decimal(str(self.successful_observations)) / Decimal(
+            str(self.total_observations)
+        )
 
     @computed_field
     @property

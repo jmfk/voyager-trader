@@ -85,8 +85,10 @@ class TestSkillLibrary:
 
         skill1 = TradingSkill("skill1", "desc", "code", {})
         skill1.success_rate = 0.8
+        skill1.usage_count = 10
         skill2 = TradingSkill("skill2", "desc", "code", {})
         skill2.success_rate = 0.5
+        skill2.usage_count = 10
 
         library.add_skill(skill1)
         library.add_skill(skill2)
