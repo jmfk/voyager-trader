@@ -707,12 +707,16 @@ class PerformanceProgressTracker:
 
         completion_record = {
             "task_id": task.id,
-            "task_type": task.task_type.value
-            if hasattr(task.task_type, "value")
-            else task.task_type,
-            "difficulty": task.difficulty.value
-            if hasattr(task.difficulty, "value")
-            else task.difficulty,
+            "task_type": (
+                task.task_type.value
+                if hasattr(task.task_type, "value")
+                else task.task_type
+            ),
+            "difficulty": (
+                task.difficulty.value
+                if hasattr(task.difficulty, "value")
+                else task.difficulty
+            ),
             "success": success,
             "timestamp": datetime.utcnow().isoformat(),
             "metrics": metrics,
