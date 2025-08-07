@@ -31,19 +31,16 @@ from .models.types import SkillCategory, SkillComplexity
 class SkillExecutionError(Exception):
     """Exception raised during skill execution."""
 
-    pass
 
 
 class SkillCompositionError(Exception):
     """Exception raised during skill composition."""
 
-    pass
 
 
 class SkillValidationError(Exception):
     """Exception raised during skill validation."""
 
-    pass
 
 
 class SkillExecutor:
@@ -316,13 +313,15 @@ result = execute_composed_strategy(inputs, context)
             "skills_count": len(skills),
             "skill_names": [skill.name for skill in skills],
             "total_complexity": sum(
-                1
-                if skill.complexity == SkillComplexity.BASIC
-                else 2
-                if skill.complexity == SkillComplexity.INTERMEDIATE
-                else 3
-                if skill.complexity == SkillComplexity.ADVANCED
-                else 4
+                (
+                    1
+                    if skill.complexity == SkillComplexity.BASIC
+                    else (
+                        2
+                        if skill.complexity == SkillComplexity.INTERMEDIATE
+                        else 3 if skill.complexity == SkillComplexity.ADVANCED else 4
+                    )
+                )
                 for skill in skills
             ),
         }
@@ -427,7 +426,6 @@ class SkillValidator(ABC):
     @abstractmethod
     def validate(self, skill: Skill) -> Tuple[bool, List[str]]:
         """Validate a skill. Returns (is_valid, error_messages)."""
-        pass
 
 
 class SyntaxValidator(SkillValidator):
@@ -699,9 +697,9 @@ class SkillLibrarian:
                 comp if isinstance(comp, str) else comp.value: len(ids)
                 for comp, ids in self._complexity_index.items()
             },
-            "average_success_rate": sum(s.success_rate for s in skills) / len(skills)
-            if skills
-            else 0,
+            "average_success_rate": (
+                sum(s.success_rate for s in skills) / len(skills) if skills else 0
+            ),
             "total_usage_count": sum(s.usage_count for s in skills),
             "reliable_skills": len([s for s in skills if s.is_reliable]),
             "experimental_skills": len([s for s in skills if s.is_experimental]),
@@ -1242,9 +1240,11 @@ class SkillLibrary:
                 k: Decimal(str(v)) for k, v in skill.performance_metrics.items()
             },
             usage_count=skill.usage_count,
-            success_count=int(skill.success_rate * skill.usage_count / 100)
-            if skill.usage_count > 0
-            else 0,
+            success_count=(
+                int(skill.success_rate * skill.usage_count / 100)
+                if skill.usage_count > 0
+                else 0
+            ),
             tags=skill.tags,
             required_skills=skill.prerequisites,
         )
