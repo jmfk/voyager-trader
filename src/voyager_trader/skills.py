@@ -354,9 +354,7 @@ result = execute_composed_strategy(inputs, context)
                     else (
                         2
                         if skill.complexity == SkillComplexity.INTERMEDIATE
-                        else 3
-                        if skill.complexity == SkillComplexity.ADVANCED
-                        else 4
+                        else 3 if skill.complexity == SkillComplexity.ADVANCED else 4
                     )
                 )
                 for skill in skills
