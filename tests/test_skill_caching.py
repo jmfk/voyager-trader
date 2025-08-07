@@ -2,14 +2,11 @@
 Tests for the skill caching and performance optimization functionality.
 """
 
-import json
 import shutil
 import tempfile
 import time
 from datetime import datetime, timedelta
-from decimal import Decimal
 from pathlib import Path
-from unittest.mock import Mock, patch
 
 import pytest
 

@@ -5,7 +5,6 @@ Performance and stress tests for the skill caching system.
 import concurrent.futures
 import tempfile
 import time
-from decimal import Decimal
 from pathlib import Path
 from threading import Thread
 

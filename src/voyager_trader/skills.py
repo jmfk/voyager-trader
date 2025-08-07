@@ -14,13 +14,11 @@ import ast
 import hashlib
 import json
 import logging
-import os
 import sqlite3
 import subprocess
 import sys
 import tempfile
 import time
-import warnings
 from abc import ABC, abstractmethod
 from collections import OrderedDict
 from contextlib import contextmanager
@@ -30,7 +28,7 @@ from decimal import Decimal
 from pathlib import Path
 from queue import Empty, Queue
 from threading import Lock, RLock
-from typing import Any, Dict, List, Optional, Set, Tuple, Union
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 # Optional import for memory monitoring
 try:
@@ -390,12 +388,16 @@ class DatabaseSkillStorage:
                     "id": skill.id,
                     "name": skill.name,
                     "description": skill.description,
-                    "category": skill.category
-                    if isinstance(skill.category, str)
-                    else skill.category.value,
-                    "complexity": skill.complexity
-                    if isinstance(skill.complexity, str)
-                    else skill.complexity.value,
+                    "category": (
+                        skill.category
+                        if isinstance(skill.category, str)
+                        else skill.category.value
+                    ),
+                    "complexity": (
+                        skill.complexity
+                        if isinstance(skill.complexity, str)
+                        else skill.complexity.value
+                    ),
                     "version": skill.version,
                     "code": skill.code,
                     "language": skill.language,
@@ -407,9 +409,9 @@ class DatabaseSkillStorage:
                     ),
                     "usage_count": skill.usage_count,
                     "success_count": skill.success_count,
-                    "last_used": skill.last_used.isoformat()
-                    if skill.last_used
-                    else None,
+                    "last_used": (
+                        skill.last_used.isoformat() if skill.last_used else None
+                    ),
                     "is_active": skill.is_active,
                     "tags": json.dumps(skill.tags),
                     "required_skills": json.dumps(skill.required_skills),
@@ -1302,9 +1304,7 @@ result = execute_composed_strategy(inputs, context)
                     else (
                         2
                         if skill.complexity == SkillComplexity.INTERMEDIATE
-                        else 3
-                        if skill.complexity == SkillComplexity.ADVANCED
-                        else 4
+                        else 3 if skill.complexity == SkillComplexity.ADVANCED else 4
                     )
                 )
                 for skill in skills
@@ -1645,17 +1645,21 @@ class SkillLibrarian:
                 # Cache metadata for fast retrieval
                 metadata = {
                     "name": skill.name,
-                    "category": skill.category
-                    if isinstance(skill.category, str)
-                    else skill.category.value,
-                    "complexity": skill.complexity
-                    if isinstance(skill.complexity, str)
-                    else skill.complexity.value,
+                    "category": (
+                        skill.category
+                        if isinstance(skill.category, str)
+                        else skill.category.value
+                    ),
+                    "complexity": (
+                        skill.complexity
+                        if isinstance(skill.complexity, str)
+                        else skill.complexity.value
+                    ),
                     "tags": skill.tags,
                     "version": skill.version,
-                    "last_used": skill.last_used.isoformat()
-                    if skill.last_used
-                    else None,
+                    "last_used": (
+                        skill.last_used.isoformat() if skill.last_used else None
+                    ),
                     "usage_count": skill.usage_count,
                     "success_rate": float(skill.success_rate),
                     "file_path": str(skill_file),
@@ -1734,17 +1738,21 @@ class SkillLibrarian:
                 # Cache metadata
                 metadata = {
                     "name": skill.name,
-                    "category": skill.category
-                    if isinstance(skill.category, str)
-                    else skill.category.value,
-                    "complexity": skill.complexity
-                    if isinstance(skill.complexity, str)
-                    else skill.complexity.value,
+                    "category": (
+                        skill.category
+                        if isinstance(skill.category, str)
+                        else skill.category.value
+                    ),
+                    "complexity": (
+                        skill.complexity
+                        if isinstance(skill.complexity, str)
+                        else skill.complexity.value
+                    ),
                     "tags": skill.tags,
                     "version": skill.version,
-                    "last_used": skill.last_used.isoformat()
-                    if skill.last_used
-                    else None,
+                    "last_used": (
+                        skill.last_used.isoformat() if skill.last_used else None
+                    ),
                     "usage_count": skill.usage_count,
                     "success_rate": float(skill.success_rate),
                     "file_path": str(skill_file),

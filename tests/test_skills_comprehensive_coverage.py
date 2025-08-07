@@ -2,27 +2,17 @@
 Comprehensive tests for skills.py to increase coverage.
 """
 
-import json
-import tempfile
-import time
-from decimal import Decimal
-from pathlib import Path
 
 import pytest
 
-from voyager_trader.models.learning import Experience, Skill, SkillExecutionResult
+from voyager_trader.models.learning import Skill
 from voyager_trader.models.types import SkillCategory, SkillComplexity
 from voyager_trader.skills import (
-    CacheConfig,
-    DatabaseConfig,
     PerformanceValidator,
     SecurityValidator,
     SkillComposer,
     SkillDiscoverer,
-    SkillExecutor,
-    SkillLibrarian,
     SyntaxValidator,
-    VoyagerSkillLibrary,
 )
 
 
