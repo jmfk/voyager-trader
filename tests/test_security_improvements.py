@@ -2,10 +2,6 @@
 Tests for security and performance improvements in the skill caching system.
 """
 
-import json
-import tempfile
-import time
-from pathlib import Path
 from unittest.mock import Mock, patch
 
 import pytest
