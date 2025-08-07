@@ -44,7 +44,7 @@ def test_curriculum_data_classes():
 
     # Test PerformanceAnalysis creation
     analysis = PerformanceAnalysis(
-        success_rate=Decimal("75.5"),
+        success_rate=Decimal("0.755"),
         improvement_trend="improving",
         learning_velocity=Decimal("0.3"),
         strengths=["execution"],
@@ -53,7 +53,7 @@ def test_curriculum_data_classes():
         confidence_level=Decimal("0.85"),
     )
 
-    assert analysis.success_rate == Decimal("75.5")
+    assert analysis.success_rate == Decimal("0.755")
     assert analysis.improvement_trend == "improving"
 
     # Test DifficultyScore creation
@@ -216,7 +216,7 @@ def test_adaptive_engine():
 
     # Test difficulty adjustment suggestions
     high_performance = PerformanceAnalysis(
-        success_rate=Decimal("90"),
+        success_rate=Decimal("0.9"),
         improvement_trend="improving",
         learning_velocity=Decimal("0.5"),
         strengths=["execution"],
@@ -231,7 +231,7 @@ def test_adaptive_engine():
     assert suggestion == DifficultyLevel.INTERMEDIATE
 
     low_performance = PerformanceAnalysis(
-        success_rate=Decimal("35"),
+        success_rate=Decimal("0.35"),
         improvement_trend="declining",
         learning_velocity=Decimal("0.1"),
         strengths=[],

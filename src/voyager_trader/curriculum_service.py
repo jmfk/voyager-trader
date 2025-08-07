@@ -166,8 +166,12 @@ class CurriculumPersistenceService:
             "id": curriculum.id,
             "name": curriculum.name,
             "agent_id": curriculum.agent_id,
-            "strategy": curriculum.strategy.value,
-            "current_difficulty": curriculum.current_difficulty.value,
+            "strategy": curriculum.strategy.value
+            if hasattr(curriculum.strategy, "value")
+            else curriculum.strategy,
+            "current_difficulty": curriculum.current_difficulty.value
+            if hasattr(curriculum.current_difficulty, "value")
+            else curriculum.current_difficulty,
             "target_skills": curriculum.target_skills,
             "completed_skills": curriculum.completed_skills,
             "active_tasks": curriculum.active_tasks,
@@ -186,10 +190,18 @@ class CurriculumPersistenceService:
             "id": task.id,
             "title": task.title,
             "description": task.description,
-            "task_type": task.task_type.value,
-            "priority": task.priority.value,
-            "difficulty": task.difficulty.value,
-            "status": task.status.value,
+            "task_type": task.task_type.value
+            if hasattr(task.task_type, "value")
+            else task.task_type,
+            "priority": task.priority.value
+            if hasattr(task.priority, "value")
+            else task.priority,
+            "difficulty": task.difficulty.value
+            if hasattr(task.difficulty, "value")
+            else task.difficulty,
+            "status": task.status.value
+            if hasattr(task.status, "value")
+            else task.status,
             "objectives": task.objectives,
             "success_criteria": task.success_criteria,
             "required_skills": task.required_skills,
@@ -502,6 +514,10 @@ class ResumableCurriculumService(AutomaticCurriculumService):
         curriculum = Curriculum(
             id=f"curriculum_{agent.id}",
             name=f"VOYAGER Curriculum for {agent.name}",
+            description=(
+                f"Progressive learning curriculum for {agent.name} "
+                f"using VOYAGER methodology"
+            ),
             agent_id=agent.id,
             strategy=CurriculumStrategy.PROGRESSIVE,
             current_difficulty=DifficultyLevel.BEGINNER,

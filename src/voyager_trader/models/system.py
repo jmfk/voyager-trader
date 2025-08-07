@@ -467,23 +467,19 @@ class Agent(BaseEntity):
     @computed_field
     @property
     def task_completion_rate(self) -> Decimal:
-        """Calculate task completion rate."""
+        """Calculate task completion rate as a fraction (0-1)."""
         total_tasks = len(self.completed_tasks) + len(self.active_tasks)
         if total_tasks == 0:
             return Decimal("0")
-        return (
-            Decimal(str(len(self.completed_tasks))) / Decimal(str(total_tasks))
-        ) * 100
+        return Decimal(str(len(self.completed_tasks))) / Decimal(str(total_tasks))
 
     @computed_field
     @property
     def trade_success_rate(self) -> Decimal:
-        """Calculate trade success rate."""
+        """Calculate trade success rate as a fraction (0-1)."""
         if self.total_trades == 0:
             return Decimal("0")
-        return (
-            Decimal(str(self.successful_trades)) / Decimal(str(self.total_trades))
-        ) * 100
+        return Decimal(str(self.successful_trades)) / Decimal(str(self.total_trades))
 
     @computed_field
     @property

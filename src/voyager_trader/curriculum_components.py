@@ -707,8 +707,12 @@ class PerformanceProgressTracker:
 
         completion_record = {
             "task_id": task.id,
-            "task_type": task.task_type.value,
-            "difficulty": task.difficulty.value,
+            "task_type": task.task_type.value
+            if hasattr(task.task_type, "value")
+            else task.task_type,
+            "difficulty": task.difficulty.value
+            if hasattr(task.difficulty, "value")
+            else task.difficulty,
             "success": success,
             "timestamp": datetime.utcnow().isoformat(),
             "metrics": metrics,
@@ -727,7 +731,7 @@ class PerformanceProgressTracker:
 
         # Check if recent performance is stagnant
         recent_success = agent.trade_success_rate
-        if recent_success > 80:  # High performance, might be plateau
+        if recent_success > 0.8:  # High performance, might be plateau
             return True
 
         # Check learning velocity
@@ -750,9 +754,9 @@ class PerformanceProgressTracker:
     def _calculate_trend(self, agent: Agent) -> str:
         """Calculate performance trend."""
         # Simple heuristic based on success rate and recent activity
-        if agent.task_completion_rate > 80:
+        if agent.task_completion_rate > 0.8:
             return "improving"
-        elif agent.task_completion_rate < 50:
+        elif agent.task_completion_rate < 0.5:
             return "declining"
         else:
             return "stable"
@@ -786,10 +790,10 @@ class PerformanceProgressTracker:
         """Generate performance recommendations."""
         recommendations = []
 
-        if agent.task_completion_rate < 70:
+        if agent.task_completion_rate < 0.7:
             recommendations.append("Focus on completing more basic tasks")
 
-        if agent.trade_success_rate < 60:
+        if agent.trade_success_rate < 0.6:
             recommendations.append("Improve risk management skills")
 
         if len(agent.learned_skills) < 3:
@@ -823,11 +827,12 @@ class AdaptiveLogicEngine:
         self.logger.info(f"Checking adaptation need for trigger: {trigger}")
 
         if trigger == AdaptationTrigger.PERFORMANCE_DECLINE:
-            return analysis.success_rate < 50
+            return analysis.success_rate < 0.5
 
         elif trigger == AdaptationTrigger.PERFORMANCE_IMPROVEMENT:
             return (
-                analysis.success_rate > 85 and analysis.improvement_trend == "improving"
+                analysis.success_rate > 0.85
+                and analysis.improvement_trend == "improving"
             )
 
         elif trigger == AdaptationTrigger.TASK_COMPLETION:
@@ -835,7 +840,9 @@ class AdaptiveLogicEngine:
             return len(curriculum.completed_tasks) % 3 == 0
 
         elif trigger == AdaptationTrigger.LEARNING_PLATEAU:
-            return analysis.improvement_trend == "stable" and analysis.success_rate > 75
+            return (
+                analysis.improvement_trend == "stable" and analysis.success_rate > 0.75
+            )
 
         elif trigger == AdaptationTrigger.TIME_BASED:
             # Adapt weekly
@@ -879,7 +886,7 @@ class AdaptiveLogicEngine:
         self, current_level: DifficultyLevel, analysis: PerformanceAnalysis
     ) -> Optional[DifficultyLevel]:
         """Suggest difficulty level adjustment."""
-        if analysis.success_rate > 85 and analysis.improvement_trend == "improving":
+        if analysis.success_rate > 0.85 and analysis.improvement_trend == "improving":
             # Suggest advancing
             level_order = [
                 DifficultyLevel.BEGINNER,
@@ -891,7 +898,7 @@ class AdaptiveLogicEngine:
             if current_index < len(level_order) - 1:
                 return level_order[current_index + 1]
 
-        elif analysis.success_rate < 40:
+        elif analysis.success_rate < 0.4:
             # Suggest reducing
             level_order = [
                 DifficultyLevel.BEGINNER,

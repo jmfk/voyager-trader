@@ -467,6 +467,13 @@ class TestPerformanceProgressTracker:
             total_trades=1000,
             successful_trades=850,  # 85% success rate
             learning_velocity=Decimal("0.05"),  # Low learning velocity
+            completed_tasks=[
+                "task1",
+                "task2",
+                "task3",
+                "task4",
+                "task5",
+            ],  # Enough completed tasks
         )
 
         assert tracker.detect_learning_plateau(high_perf_agent) is True
@@ -521,7 +528,7 @@ class TestAdaptiveLogicEngine:
     def test_should_adapt_performance_improvement(self, engine, curriculum):
         """Test adaptation trigger for performance improvement."""
         analysis = PerformanceAnalysis(
-            success_rate=Decimal("90"),
+            success_rate=Decimal("0.9"),
             improvement_trend="improving",
             learning_velocity=Decimal("0.5"),
             strengths=["execution"],
@@ -539,7 +546,7 @@ class TestAdaptiveLogicEngine:
     def test_should_adapt_performance_decline(self, engine, curriculum):
         """Test adaptation trigger for performance decline."""
         analysis = PerformanceAnalysis(
-            success_rate=Decimal("40"),
+            success_rate=Decimal("0.4"),
             improvement_trend="declining",
             learning_velocity=Decimal("0.2"),
             strengths=[],
@@ -557,7 +564,7 @@ class TestAdaptiveLogicEngine:
     def test_adapt_curriculum_advance_difficulty(self, engine, curriculum):
         """Test curriculum adaptation to advance difficulty."""
         analysis = PerformanceAnalysis(
-            success_rate=Decimal("90"),
+            success_rate=Decimal("0.9"),
             improvement_trend="improving",
             learning_velocity=Decimal("0.5"),
             strengths=["execution", "analysis"],
@@ -580,7 +587,7 @@ class TestAdaptiveLogicEngine:
         """Test difficulty adjustment suggestions."""
         # High performance should suggest advancement
         high_analysis = PerformanceAnalysis(
-            success_rate=Decimal("90"),
+            success_rate=Decimal("0.9"),
             improvement_trend="improving",
             learning_velocity=Decimal("0.5"),
             strengths=["execution"],
@@ -596,7 +603,7 @@ class TestAdaptiveLogicEngine:
 
         # Low performance should suggest reduction
         low_analysis = PerformanceAnalysis(
-            success_rate=Decimal("35"),
+            success_rate=Decimal("0.35"),
             improvement_trend="declining",
             learning_velocity=Decimal("0.1"),
             strengths=[],
