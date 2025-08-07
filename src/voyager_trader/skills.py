@@ -14,11 +14,13 @@ import ast
 import hashlib
 import json
 import logging
+import os
 import sqlite3
 import subprocess
 import sys
 import tempfile
 import time
+import warnings
 from abc import ABC, abstractmethod
 from collections import OrderedDict
 from contextlib import contextmanager
@@ -28,7 +30,15 @@ from decimal import Decimal
 from pathlib import Path
 from queue import Empty, Queue
 from threading import Lock, RLock
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
+
+# Optional import for memory monitoring
+try:
+    import psutil
+
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
 
 from .models.learning import Experience, Skill, SkillExecutionResult
 from .models.types import SkillCategory, SkillComplexity
@@ -36,6 +46,18 @@ from .models.types import SkillCategory, SkillComplexity
 
 class SkillExecutionError(Exception):
     """Exception raised during skill execution."""
+
+
+class DatabaseConnectionError(Exception):
+    """Exception raised for database connection issues."""
+
+
+class CacheOverflowError(Exception):
+    """Exception raised when cache utilization exceeds safe limits."""
+
+
+class SecurityValidationError(Exception):
+    """Exception raised when skill code fails security validation."""
 
 
 class SkillCompositionError(Exception):
@@ -64,7 +86,7 @@ class DatabaseConfig:
 
 
 class ConnectionPool:
-    """Thread-safe database connection pool."""
+    """Thread-safe database connection pool with exhaustion monitoring."""
 
     def __init__(self, config: DatabaseConfig):
         self.config = config
@@ -73,6 +95,16 @@ class ConnectionPool:
         self._overflow_connections = 0
         self._pool_lock = Lock()
         self._initialized = False
+
+        # Monitoring metrics
+        self._total_requests = 0
+        self._exhaustion_events = 0
+        self._last_exhaustion_alert = datetime.utcnow() - timedelta(
+            minutes=10
+        )  # Allow immediate alert
+        self._exhaustion_alert_interval = timedelta(
+            minutes=5
+        )  # Alert every 5 minutes max
 
         if config.enable_connection_pooling:
             self._initialize_pool()
@@ -123,6 +155,10 @@ class ConnectionPool:
         conn = None
         is_overflow = False
 
+        # Track request metrics
+        with self._pool_lock:
+            self._total_requests += 1
+
         try:
             # Try to get connection from pool
             try:
@@ -135,8 +171,35 @@ class ConnectionPool:
                         self._overflow_connections += 1
                         is_overflow = True
                         self.logger.debug("Created overflow connection")
+
+                        # Alert if overflow usage is high
+                        overflow_utilization = (
+                            self._overflow_connections / self.config.max_overflow
+                        )
+                        if overflow_utilization > 0.8:  # 80% of overflow capacity
+                            self.logger.warning(
+                                f"High overflow connection usage: {overflow_utilization:.1%} "
+                                f"({self._overflow_connections}/{self.config.max_overflow})"
+                            )
                     else:
-                        raise DatabaseConnectionError("Connection pool exhausted")
+                        # Track exhaustion events
+                        self._exhaustion_events += 1
+                        now = datetime.utcnow()
+
+                        # Rate-limited exhaustion alerts
+                        if (
+                            now - self._last_exhaustion_alert
+                            >= self._exhaustion_alert_interval
+                        ):
+                            self.logger.error(
+                                f"Connection pool exhausted! Total exhaustion events: {self._exhaustion_events}. "
+                                f"Pool size: {self.config.pool_size}, Max overflow: {self.config.max_overflow}"
+                            )
+                            self._last_exhaustion_alert = now
+
+                        raise DatabaseConnectionError(
+                            f"Connection pool exhausted (event #{self._exhaustion_events})"
+                        )
 
             # Test connection is still valid
             if self._is_connection_stale(conn):
@@ -189,20 +252,66 @@ class ConnectionPool:
             self.logger.info("Closed all connections in pool")
 
     def get_pool_stats(self) -> Dict[str, Any]:
-        """Get connection pool statistics."""
+        """Get comprehensive connection pool statistics with monitoring data."""
         with self._pool_lock:
+            available = self._pool.qsize()
+            pool_utilization = (
+                (self.config.pool_size - available) / self.config.pool_size
+                if self.config.pool_size > 0
+                else 0
+            )
+            overflow_utilization = (
+                self._overflow_connections / self.config.max_overflow
+                if self.config.max_overflow > 0
+                else 0
+            )
+
             return {
                 "pool_size": self.config.pool_size,
-                "available_connections": self._pool.qsize(),
+                "available_connections": available,
                 "overflow_connections": self._overflow_connections,
                 "max_overflow": self.config.max_overflow,
-                "pool_utilization": (
-                    (self.config.pool_size - self._pool.qsize()) / self.config.pool_size
-                    if self.config.pool_size > 0
+                "pool_utilization": pool_utilization,
+                "pool_utilization_percentage": pool_utilization * 100,
+                "overflow_utilization": overflow_utilization,
+                "overflow_utilization_percentage": overflow_utilization * 100,
+                "initialized": self._initialized,
+                "total_requests": self._total_requests,
+                "exhaustion_events": self._exhaustion_events,
+                "exhaustion_rate": (
+                    self._exhaustion_events / self._total_requests
+                    if self._total_requests > 0
                     else 0
                 ),
-                "initialized": self._initialized,
             }
+
+    def check_pool_health(self) -> List[str]:
+        """Check pool health and return any warnings or alerts."""
+        warnings = []
+        stats = self.get_pool_stats()
+
+        # Check pool utilization
+        if stats["pool_utilization"] > 0.9:
+            warnings.append(
+                f"High pool utilization: {stats['pool_utilization']:.1%} "
+                f"({self.config.pool_size - stats['available_connections']}/{self.config.pool_size})"
+            )
+
+        # Check overflow utilization
+        if stats["overflow_utilization"] > 0.8:
+            warnings.append(
+                f"High overflow utilization: {stats['overflow_utilization']:.1%} "
+                f"({stats['overflow_connections']}/{self.config.max_overflow})"
+            )
+
+        # Check exhaustion rate
+        if stats["exhaustion_rate"] > 0.01:  # More than 1% of requests failing
+            warnings.append(
+                f"High exhaustion rate: {stats['exhaustion_rate']:.2%} "
+                f"({stats['exhaustion_events']}/{stats['total_requests']} requests)"
+            )
+
+        return warnings
 
 
 class DatabaseSkillStorage:
@@ -331,8 +440,14 @@ class DatabaseSkillStorage:
 
             return True
 
+        except sqlite3.Error as e:
+            self.logger.error(f"Database error storing skill: {e}")
+            return False
+        except json.JSONEncodeError as e:
+            self.logger.error(f"JSON encoding error for skill data: {e}")
+            return False
         except Exception as e:
-            self.logger.error(f"Failed to store skill to database: {e}")
+            self.logger.error(f"Unexpected error storing skill to database: {e}")
             return False
 
     def get_connection_stats(self) -> Dict[str, Any]:
@@ -358,6 +473,9 @@ class CacheConfig:
         metadata_cache_ttl_hours: int = 72,
         enable_compilation_cache: bool = True,
         enable_result_cache: bool = True,
+        cache_utilization_alert_threshold: float = 0.85,
+        enable_memory_monitoring: bool = True,
+        memory_report_interval_minutes: int = 30,
     ):
         self.max_execution_cache_size = max_execution_cache_size
         self.max_metadata_cache_size = max_metadata_cache_size
@@ -365,6 +483,9 @@ class CacheConfig:
         self.metadata_cache_ttl_hours = metadata_cache_ttl_hours
         self.enable_compilation_cache = enable_compilation_cache
         self.enable_result_cache = enable_result_cache
+        self.cache_utilization_alert_threshold = cache_utilization_alert_threshold
+        self.enable_memory_monitoring = enable_memory_monitoring
+        self.memory_report_interval_minutes = memory_report_interval_minutes
 
 
 @dataclass
@@ -418,15 +539,15 @@ class LRUCache:
             self._hits += 1
             return entry.value
 
-    def put(self, key: str, value: Any) -> None:
-        """Put value in cache with LRU eviction."""
+    def put(self, key: str, value: Any, alert_threshold: float = 0.85) -> Optional[str]:
+        """Put value in cache with LRU eviction and utilization monitoring."""
         with self._lock:
             # If key exists, update it
             if key in self._cache:
                 self._cache[key].value = value
                 self._cache[key].timestamp = datetime.utcnow()
                 self._cache.move_to_end(key)
-                return
+                return self.check_utilization_alert(alert_threshold)
 
             # Add new entry
             entry = CacheEntry(value=value, timestamp=datetime.utcnow())
@@ -436,6 +557,9 @@ class LRUCache:
             if len(self._cache) > self.max_size:
                 oldest_key = next(iter(self._cache))
                 del self._cache[oldest_key]
+
+            # Check for utilization alert
+            return self.check_utilization_alert(alert_threshold)
 
     def clear(self) -> None:
         """Clear all cache entries and reset stats."""
@@ -459,10 +583,11 @@ class LRUCache:
             return len(expired_keys)
 
     def get_stats(self) -> Dict[str, Any]:
-        """Get cache statistics."""
+        """Get cache statistics with utilization monitoring."""
         with self._lock:
             total_requests = self._hits + self._misses
             hit_rate = self._hits / total_requests if total_requests > 0 else 0
+            utilization = len(self._cache) / self.max_size if self.max_size > 0 else 0
 
             return {
                 "size": len(self._cache),
@@ -471,11 +596,25 @@ class LRUCache:
                 "misses": self._misses,
                 "hit_rate": hit_rate,
                 "ttl_hours": self.ttl_hours,
+                "utilization": utilization,
+                "utilization_percentage": utilization * 100,
             }
+
+    def check_utilization_alert(self, threshold: float = 0.85) -> Optional[str]:
+        """Check if cache utilization exceeds threshold and return alert message."""
+        with self._lock:
+            utilization = len(self._cache) / self.max_size if self.max_size > 0 else 0
+
+            if utilization > threshold:
+                return (
+                    f"Cache utilization alert: {utilization:.1%} exceeds "
+                    f"threshold of {threshold:.1%} ({len(self._cache)}/{self.max_size})"
+                )
+            return None
 
 
 class SkillExecutionCache:
-    """Specialized cache for skill execution results."""
+    """Specialized cache for skill execution results with monitoring."""
 
     def __init__(self, config: CacheConfig):
         self.config = config
@@ -493,6 +632,53 @@ class SkillExecutionCache:
             ttl_hours=config.metadata_cache_ttl_hours,
         )
         self.logger = logging.getLogger(__name__)
+        self._last_memory_report = datetime.utcnow()
+        self._memory_monitoring_enabled = config.enable_memory_monitoring
+        self._memory_report_interval = timedelta(
+            minutes=config.memory_report_interval_minutes
+        )
+
+    def _check_memory_monitoring(self) -> None:
+        """Check if it's time to report memory usage."""
+        if not self._memory_monitoring_enabled:
+            return
+
+        now = datetime.utcnow()
+        if now - self._last_memory_report >= self._memory_report_interval:
+            self._report_memory_usage()
+            self._last_memory_report = now
+
+    def _report_memory_usage(self) -> None:
+        """Report current memory usage statistics."""
+        if not PSUTIL_AVAILABLE:
+            self.logger.debug("Memory monitoring disabled: psutil not available")
+            return
+
+        try:
+            process = psutil.Process()
+            memory_info = process.memory_info()
+            memory_percent = process.memory_percent()
+
+            stats = {
+                "rss_mb": memory_info.rss / (1024 * 1024),  # Resident memory in MB
+                "vms_mb": memory_info.vms / (1024 * 1024),  # Virtual memory in MB
+                "percent": memory_percent,
+                "execution_cache_size": self._execution_cache.get_stats()["size"],
+                "compilation_cache_size": self._compilation_cache.get_stats()["size"],
+                "metadata_cache_size": self._metadata_cache.get_stats()["size"],
+            }
+
+            self.logger.info(f"Memory usage report: {stats}")
+
+            # Alert on high memory usage
+            if memory_percent > 80:
+                self.logger.warning(
+                    f"High memory usage detected: {memory_percent:.1f}% "
+                    f"({memory_info.rss / (1024 * 1024):.1f} MB)"
+                )
+
+        except Exception as e:
+            self.logger.debug(f"Failed to report memory usage: {e}")
 
     def _generate_execution_key(
         self, skill: "Skill", inputs: Dict[str, Any], context: Optional[Dict[str, Any]]
@@ -574,13 +760,22 @@ class SkillExecutionCache:
         return compiled_code
 
     def cache_compiled_code(self, skill: "Skill", compiled_code: str) -> None:
-        """Cache compiled skill code."""
+        """Cache compiled skill code with monitoring."""
         if not self.config.enable_compilation_cache:
             return
 
         cache_key = self._generate_compilation_key(skill)
-        self._compilation_cache.put(cache_key, compiled_code)
+        alert = self._compilation_cache.put(
+            cache_key, compiled_code, self.config.cache_utilization_alert_threshold
+        )
+
+        if alert:
+            self.logger.warning(f"Compilation cache utilization alert: {alert}")
+
         self.logger.debug(f"Cached compiled code for skill: {skill.name}")
+
+        # Check if memory monitoring is needed
+        self._check_memory_monitoring()
 
     def get_skill_metadata(self, skill_id: str) -> Optional[Dict[str, Any]]:
         """Get cached skill metadata."""
@@ -832,18 +1027,107 @@ except Exception as e:
         inputs: Dict[str, Any],
         context: Optional[Dict[str, Any]],
     ) -> str:
-        """Inject runtime inputs and context into cached compiled code."""
-        # Replace the placeholder sections in cached code with current data
+        """Inject runtime inputs and context using AST manipulation."""
+        try:
+            return self._inject_runtime_data_ast(cached_code, inputs, context)
+        except Exception as e:
+            self.logger.warning(
+                f"AST injection failed, falling back to string replacement: {e}"
+            )
+            return self._inject_runtime_data_fallback(cached_code, inputs, context)
+
+    def _inject_runtime_data_ast(
+        self,
+        cached_code: str,
+        inputs: Dict[str, Any],
+        context: Optional[Dict[str, Any]],
+    ) -> str:
+        """Inject runtime data using AST parsing and transformation."""
+        # Parse the cached code into an AST
+        tree = ast.parse(cached_code)
+
+        # Create the runtime data values
+        runtime_inputs = inputs
+        runtime_context = context or {}
+
+        # Transform the AST to replace placeholder assignments
+        class RuntimeDataInjector(ast.NodeTransformer):
+            def visit_Assign(self, node):
+                # Look for assignments like "inputs = {}" or "context = {}"
+                if len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+                    target_name = node.targets[0].id
+
+                    if target_name == "inputs" and isinstance(node.value, ast.Dict):
+                        # Replace with actual inputs data
+                        new_value = ast.parse(repr(runtime_inputs)).body[0].value
+                        return ast.Assign(targets=node.targets, value=new_value)
+                    elif target_name == "context" and isinstance(node.value, ast.Dict):
+                        # Replace with actual context data
+                        new_value = ast.parse(repr(runtime_context)).body[0].value
+                        return ast.Assign(targets=node.targets, value=new_value)
+
+                return self.generic_visit(node)
+
+        # Transform the AST
+        transformer = RuntimeDataInjector()
+        new_tree = transformer.visit(tree)
+
+        # Fix missing locations and convert back to source code
+        ast.fix_missing_locations(new_tree)
+
+        # Convert AST back to source code
+        import astor
+
+        try:
+            return astor.to_source(new_tree)
+        except ImportError:
+            # If astor is not available, use a simpler approach
+            # This is a fallback that reconstructs basic assignments
+            return self._reconstruct_from_ast(new_tree)
+
+    def _reconstruct_from_ast(self, tree: ast.AST) -> str:
+        """Simple AST-to-source reconstruction for basic cases."""
+        lines = []
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign):
+                if len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+                    target = node.targets[0].id
+
+                    # Simple value reconstruction
+                    if isinstance(node.value, ast.Dict):
+                        lines.append(f"{target} = {{}}")
+                    elif isinstance(node.value, ast.Constant):
+                        lines.append(f"{target} = {repr(node.value.value)}")
+
+        # This is a simplified fallback - for production use, install astor
+        return (
+            "\n".join(lines)
+            + "\n"
+            + "# AST reconstruction incomplete - install astor package"
+        )
+
+    def _inject_runtime_data_fallback(
+        self,
+        cached_code: str,
+        inputs: Dict[str, Any],
+        context: Optional[Dict[str, Any]],
+    ) -> str:
+        """Fallback string replacement method for runtime data injection."""
         runtime_inputs = json.dumps(inputs, default=str)
         runtime_context = json.dumps(context or {}, default=str)
 
-        # This assumes the cached code has placeholders we can replace
-        # In a more sophisticated implementation, we'd parse and replace AST nodes
-        code_with_inputs = cached_code.replace(
-            "inputs = {}", f"inputs = {runtime_inputs}"
+        # Improved string replacement with better pattern matching
+        import re
+
+        # Replace inputs assignment
+        code_with_inputs = re.sub(
+            r"inputs\s*=\s*\{[^}]*\}", f"inputs = {runtime_inputs}", cached_code
         )
-        code_with_context = code_with_inputs.replace(
-            "context = {}", f"context = {runtime_context}"
+
+        # Replace context assignment
+        code_with_context = re.sub(
+            r"context\s*=\s*\{[^}]*\}", f"context = {runtime_context}", code_with_inputs
         )
 
         return code_with_context
