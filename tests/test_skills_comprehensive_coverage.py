@@ -2,7 +2,6 @@
 Comprehensive tests for skills.py to increase coverage.
 """
 
-
 import pytest
 
 from voyager_trader.models.learning import Skill
