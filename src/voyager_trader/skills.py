@@ -40,6 +40,7 @@ except ImportError:
 
 from .models.learning import Experience, Skill, SkillExecutionResult
 from .models.types import SkillCategory, SkillComplexity
+from .observability import ObservabilityConfig, SkillObservabilityManager
 
 
 class SkillExecutionError(Exception):
@@ -842,6 +843,7 @@ class SkillExecutor:
         timeout_seconds: int = 30,
         max_memory_mb: int = 128,
         cache_config: Optional[CacheConfig] = None,
+        observability_config: Optional[ObservabilityConfig] = None,
     ):
         self.timeout_seconds = timeout_seconds
         self.max_memory_mb = max_memory_mb
@@ -851,6 +853,10 @@ class SkillExecutor:
         self.cache_config = cache_config or CacheConfig()
         self.cache = SkillExecutionCache(self.cache_config)
 
+        # Initialize observability system
+        self.observability_config = observability_config or ObservabilityConfig()
+        self.observability = SkillObservabilityManager(self.observability_config)
+
     def execute_skill(
         self,
         skill: Skill,
@@ -858,117 +864,137 @@ class SkillExecutor:
         context: Optional[Dict[str, Any]] = None,
     ) -> Tuple[SkillExecutionResult, Any, Dict[str, Any]]:
         """
-        Execute a skill safely in a sandboxed environment with caching.
+        Execute a skill safely in a sandboxed environment with caching and observability.
 
         Returns:
             Tuple of (result, output, execution_metadata)
         """
-        start_time = time.time()
-        execution_metadata = {
-            "start_time": datetime.utcnow().isoformat(),
-            "skill_id": skill.id,
-            "skill_name": skill.name,
-            "inputs": inputs,
-            "context": context or {},
-            "cached": False,
-        }
+        # Use observability instrumentation for the entire execution
+        with self.observability.instrument_skill_execution(
+            skill.id, inputs
+        ) as obs_context:
+            start_time = time.time()
+            execution_metadata = {
+                "start_time": datetime.utcnow().isoformat(),
+                "skill_id": skill.id,
+                "skill_name": skill.name,
+                "inputs": inputs,
+                "context": context or {},
+                "cached": False,
+                "correlation_id": obs_context["correlation_id"],
+            }
 
-        # Check cache first
-        cached_result = self.cache.get_execution_result(skill, inputs, context)
-        if cached_result:
-            return cached_result
-
-        try:
-            # Validate inputs against skill schema
-            if not self._validate_inputs(skill, inputs):
-                result = (
-                    SkillExecutionResult.ERROR,
-                    None,
-                    {**execution_metadata, "error": "Invalid inputs"},
+            # Check cache first
+            cached_result = self.cache.get_execution_result(skill, inputs, context)
+            if cached_result:
+                self.observability.record_cache_hit(
+                    "execution", f"{skill.id}_{hash(str(inputs))}"
                 )
-                # Don't cache error results
-                return result
-
-            # Create safe execution environment
-            with tempfile.TemporaryDirectory() as temp_dir:
-                temp_path = Path(temp_dir)
-                skill_file = temp_path / f"skill_{skill.id}.py"
-
-                # Check for cached compiled code first
-                skill_code = self.cache.get_compiled_code(skill)
-                if not skill_code:
-                    skill_code = self._prepare_skill_code(skill, inputs, context)
-                    self.cache.cache_compiled_code(skill, skill_code)
-                else:
-                    # Still need to inject current inputs/context into cached code
-                    skill_code = self._inject_runtime_data(skill_code, inputs, context)
-
-                skill_file.write_text(skill_code)
-
-                # Execute in subprocess with limits
-                result = subprocess.run(
-                    [sys.executable, str(skill_file)],
-                    capture_output=True,
-                    text=True,
-                    timeout=self.timeout_seconds,
-                    cwd=temp_dir,
+                # Update metadata to indicate cached result
+                result, output, metadata = cached_result
+                metadata["cached"] = True
+                metadata["correlation_id"] = obs_context["correlation_id"]
+                return result, output, metadata
+            else:
+                self.observability.record_cache_miss(
+                    "execution", f"{skill.id}_{hash(str(inputs))}"
                 )
 
-                execution_time = time.time() - start_time
-                execution_metadata.update(
-                    {
-                        "execution_time_seconds": execution_time,
-                        "return_code": result.returncode,
-                        "stdout": result.stdout,
-                        "stderr": result.stderr,
-                    }
-                )
-
-                if result.returncode == 0:
-                    # Parse output
-                    try:
-                        output = (
-                            json.loads(result.stdout) if result.stdout.strip() else None
-                        )
-                        exec_result = (
-                            SkillExecutionResult.SUCCESS,
-                            output,
-                            execution_metadata,
-                        )
-                    except json.JSONDecodeError:
-                        exec_result = (
-                            SkillExecutionResult.SUCCESS,
-                            result.stdout.strip(),
-                            execution_metadata,
-                        )
-
-                    # Cache successful result
-                    self.cache.cache_execution_result(
-                        skill, inputs, context, exec_result
-                    )
-                    return exec_result
-                else:
-                    # Don't cache error results
-                    return (
+            try:
+                # Validate inputs against skill schema
+                if not self._validate_inputs(skill, inputs):
+                    result = (
                         SkillExecutionResult.ERROR,
                         None,
-                        {**execution_metadata, "error": result.stderr},
+                        {**execution_metadata, "error": "Invalid inputs"},
+                    )
+                    # Don't cache error results
+                    return result
+
+                # Create safe execution environment
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    temp_path = Path(temp_dir)
+                    skill_file = temp_path / f"skill_{skill.id}.py"
+
+                    # Check for cached compiled code first
+                    skill_code = self.cache.get_compiled_code(skill)
+                    if not skill_code:
+                        skill_code = self._prepare_skill_code(skill, inputs, context)
+                        self.cache.cache_compiled_code(skill, skill_code)
+                    else:
+                        # Still need to inject current inputs/context into cached code
+                        skill_code = self._inject_runtime_data(
+                            skill_code, inputs, context
+                        )
+
+                    skill_file.write_text(skill_code)
+
+                    # Execute in subprocess with limits
+                    result = subprocess.run(
+                        [sys.executable, str(skill_file)],
+                        capture_output=True,
+                        text=True,
+                        timeout=self.timeout_seconds,
+                        cwd=temp_dir,
                     )
 
-        except subprocess.TimeoutExpired:
-            # Don't cache timeout results
-            return (
-                SkillExecutionResult.TIMEOUT,
-                None,
-                {**execution_metadata, "error": "Execution timeout"},
-            )
-        except Exception as e:
-            # Don't cache error results
-            return (
-                SkillExecutionResult.ERROR,
-                None,
-                {**execution_metadata, "error": str(e)},
-            )
+                    execution_time = time.time() - start_time
+                    execution_metadata.update(
+                        {
+                            "execution_time_seconds": execution_time,
+                            "return_code": result.returncode,
+                            "stdout": result.stdout,
+                            "stderr": result.stderr,
+                        }
+                    )
+
+                    if result.returncode == 0:
+                        # Parse output
+                        try:
+                            output = (
+                                json.loads(result.stdout)
+                                if result.stdout.strip()
+                                else None
+                            )
+                            exec_result = (
+                                SkillExecutionResult.SUCCESS,
+                                output,
+                                execution_metadata,
+                            )
+                        except json.JSONDecodeError:
+                            exec_result = (
+                                SkillExecutionResult.SUCCESS,
+                                result.stdout.strip(),
+                                execution_metadata,
+                            )
+
+                        # Cache successful result
+                        self.cache.cache_execution_result(
+                            skill, inputs, context, exec_result
+                        )
+                        return exec_result
+                    else:
+                        # Don't cache error results
+                        return (
+                            SkillExecutionResult.ERROR,
+                            None,
+                            {**execution_metadata, "error": result.stderr},
+                        )
+
+            except subprocess.TimeoutExpired:
+                # Don't cache timeout results
+                return (
+                    SkillExecutionResult.TIMEOUT,
+                    None,
+                    {**execution_metadata, "error": "Execution timeout"},
+                )
+            except Exception as e:
+                # Don't cache error results
+                return (
+                    SkillExecutionResult.ERROR,
+                    None,
+                    {**execution_metadata, "error": str(e)},
+                )
 
     def _validate_inputs(self, skill: Skill, inputs: Dict[str, Any]) -> bool:
         """Validate inputs against skill's input schema."""
@@ -1304,7 +1330,9 @@ result = execute_composed_strategy(inputs, context)
                     else (
                         2
                         if skill.complexity == SkillComplexity.INTERMEDIATE
-                        else 3 if skill.complexity == SkillComplexity.ADVANCED else 4
+                        else 3
+                        if skill.complexity == SkillComplexity.ADVANCED
+                        else 4
                     )
                 )
                 for skill in skills
@@ -2353,11 +2381,22 @@ class VoyagerSkillLibrary:
             enable_result_cache=config.get("enable_result_cache", True),
         )
 
-        # Initialize all components with caching support
+        # Initialize observability configuration
+        self.observability_config = ObservabilityConfig(
+            enable_tracing=config.get("enable_tracing", True),
+            enable_metrics=config.get("enable_metrics", True),
+            otlp_endpoint=config.get("otlp_endpoint"),
+            service_name=config.get("service_name", "voyager-trader-skills"),
+            enable_health_endpoints=config.get("enable_health_endpoints", True),
+        )
+        self.observability = SkillObservabilityManager(self.observability_config)
+
+        # Initialize all components with caching and observability support
         self.executor = SkillExecutor(
             timeout_seconds=config.get("execution_timeout", 30),
             max_memory_mb=config.get("max_memory", 128),
             cache_config=self.cache_config,
+            observability_config=self.observability_config,
         )
         self.composer = SkillComposer()
         self.validator = CompositeSkillValidator()
@@ -2662,6 +2701,197 @@ class VoyagerSkillLibrary:
             )
 
         return recommendations
+
+    def get_health_status(self) -> Dict[str, Any]:
+        """Get comprehensive health status of all skill library components."""
+        health_checks = {}
+
+        # Check skill executor health
+        health_checks["executor"] = self.observability.perform_health_check(
+            "skill_executor", lambda: self._check_executor_health()
+        )
+
+        # Check skill librarian (storage) health
+        health_checks["librarian"] = self.observability.perform_health_check(
+            "skill_librarian", lambda: self._check_librarian_health()
+        )
+
+        # Check cache health
+        health_checks["cache"] = self.observability.perform_health_check(
+            "skill_cache", lambda: self._check_cache_health()
+        )
+
+        # Check validation system health
+        health_checks["validator"] = self.observability.perform_health_check(
+            "skill_validator", lambda: self._check_validator_health()
+        )
+
+        # Overall system health
+        unhealthy_components = [
+            name
+            for name, result in health_checks.items()
+            if result.status in ["unhealthy", "degraded"]
+        ]
+
+        overall_status = "healthy"
+        if unhealthy_components:
+            overall_status = (
+                "degraded" if len(unhealthy_components) == 1 else "unhealthy"
+            )
+
+        return {
+            "overall_status": overall_status,
+            "components": health_checks,
+            "unhealthy_components": unhealthy_components,
+            "system_metrics": self.observability.get_system_metrics_summary(),
+        }
+
+    def _check_executor_health(self) -> Dict[str, Any]:
+        """Check skill executor health."""
+        try:
+            # Test basic execution capability with a simple skill
+            test_skill = Skill(
+                name="test_health_check",
+                description="Test skill for health check",
+                category=SkillCategory.MARKET_ANALYSIS,
+                complexity=SkillComplexity.BASIC,
+                code="print('healthy')",
+                input_schema={"type": "object"},
+                output_schema={"type": "object"},
+            )
+
+            result, output, metadata = self.executor.execute_skill(
+                test_skill, {}, {"test": True}
+            )
+
+            cache_stats = self.executor.get_cache_stats()
+
+            return {
+                "healthy": result in [SkillExecutionResult.SUCCESS],
+                "message": "Executor responding normally",
+                "details": {
+                    "test_execution_result": result.name,
+                    "cache_stats": cache_stats,
+                    "response_time_ms": metadata.get("execution_time_seconds", 0)
+                    * 1000,
+                },
+            }
+        except Exception as e:
+            return {
+                "healthy": False,
+                "message": f"Executor health check failed: {str(e)}",
+                "details": {"error": str(e)},
+            }
+
+    def _check_librarian_health(self) -> Dict[str, Any]:
+        """Check skill librarian (storage) health."""
+        try:
+            # Test storage operations
+            library_stats = self.librarian.get_library_stats()
+            performance_summary = self.librarian.get_performance_summary()
+
+            # Check if we can list skills
+            all_skills = self.librarian.get_all_skills()
+
+            return {
+                "healthy": True,
+                "message": "Librarian responding normally",
+                "details": {
+                    "total_skills": library_stats["total_skills"],
+                    "cache_performance": performance_summary.get(
+                        "cache_performance", {}
+                    ),
+                    "storage_accessible": len(all_skills)
+                    >= 0,  # Just check accessibility
+                },
+            }
+        except Exception as e:
+            return {
+                "healthy": False,
+                "message": f"Librarian health check failed: {str(e)}",
+                "details": {"error": str(e)},
+            }
+
+    def _check_cache_health(self) -> Dict[str, Any]:
+        """Check cache system health."""
+        try:
+            # Get cache statistics from all components
+            executor_cache = self.executor.get_cache_stats()
+            librarian_cache = self.librarian.get_cache_stats()
+
+            # Check cache utilization levels
+            exec_utilization = executor_cache["execution_cache"].get(
+                "current_size", 0
+            ) / max(1, executor_cache["config"]["max_execution_cache_size"])
+
+            meta_utilization = librarian_cache["metadata_cache"]["metadata_cache"].get(
+                "current_size", 0
+            ) / max(1, librarian_cache["config"]["max_metadata_cache_size"])
+
+            max_utilization = max(exec_utilization, meta_utilization)
+
+            status = "healthy"
+            if max_utilization > 0.9:
+                status = "degraded"
+
+            return {
+                "healthy": status == "healthy",
+                "message": f"Cache utilization: {max_utilization:.1%}",
+                "details": {
+                    "executor_cache_utilization": exec_utilization,
+                    "metadata_cache_utilization": meta_utilization,
+                    "max_utilization": max_utilization,
+                    "status": status,
+                },
+            }
+        except Exception as e:
+            return {
+                "healthy": False,
+                "message": f"Cache health check failed: {str(e)}",
+                "details": {"error": str(e)},
+            }
+
+    def _check_validator_health(self) -> Dict[str, Any]:
+        """Check skill validation system health."""
+        try:
+            # Test validation system with a simple valid skill
+            test_skill = Skill(
+                name="test_validation_check",
+                description="Test skill for validation health check",
+                category=SkillCategory.MARKET_ANALYSIS,
+                complexity=SkillComplexity.BASIC,
+                code="def test(): return True",
+                input_schema={"type": "object"},
+                output_schema={"type": "object"},
+            )
+
+            is_valid, validation_errors = self.validator.validate_skill(test_skill)
+
+            return {
+                "healthy": is_valid,
+                "message": "Validator responding normally"
+                if is_valid
+                else "Validation issues detected",
+                "details": {
+                    "test_validation_result": is_valid,
+                    "validation_errors": validation_errors if not is_valid else [],
+                    "validator_count": len(self.validator.validators),
+                },
+            }
+        except Exception as e:
+            return {
+                "healthy": False,
+                "message": f"Validator health check failed: {str(e)}",
+                "details": {"error": str(e)},
+            }
+
+    def cleanup_observability(self) -> None:
+        """Cleanup observability resources."""
+        try:
+            self.observability.cleanup()
+            self.logger.info("Observability cleanup completed")
+        except Exception as e:
+            self.logger.error(f"Error during observability cleanup: {e}")
 
 
 # Legacy compatibility - maintain existing TradingSkill class for backward compatibility
