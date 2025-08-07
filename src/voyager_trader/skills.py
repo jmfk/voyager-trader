@@ -354,7 +354,9 @@ result = execute_composed_strategy(inputs, context)
                     else (
                         2
                         if skill.complexity == SkillComplexity.INTERMEDIATE
-                        else 3 if skill.complexity == SkillComplexity.ADVANCED else 4
+                        else 3
+                        if skill.complexity == SkillComplexity.ADVANCED
+                        else 4
                     )
                 )
                 for skill in skills
@@ -1319,7 +1321,14 @@ class SkillLibrary:
             },
             usage_count=skill.usage_count,
             success_count=(
-                int(skill.success_rate * skill.usage_count)
+                int(
+                    (
+                        skill.success_rate
+                        if skill.success_rate <= 1.0
+                        else skill.success_rate / 100.0
+                    )
+                    * skill.usage_count
+                )
                 if skill.usage_count > 0
                 else 0
             ),

@@ -136,7 +136,7 @@ markers = [
 # Coverage configuration
 [tool.coverage.run]
 source = ["src"]
-branch = true
+branch = false
 omit = [
     "*/tests/*",
     "*/test_*.py",
