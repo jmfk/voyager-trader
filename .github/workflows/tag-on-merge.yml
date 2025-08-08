@@ -23,13 +23,25 @@ jobs:
       - name: Get highest version tag
         id: get_tag
         run: |
-          # Get all tags, filter for semantic version format, and find the highest one
-          HIGHEST_TAG=$(git tag -l "t*.*.*" | sort -V | tail -n 1)
-          if [ -z "$HIGHEST_TAG" ]; then
-            HIGHEST_TAG="t0.0.0"
-          fi
+          # Get all tags, clean them, sort by actual version, and find the highest one
+          HIGHEST_VERSION="0.0.0"
+          HIGHEST_TAG="t0.0.0"
+
+          echo "Processing all tags to find highest version:"
+          for tag in $(git tag -l "t*.*.*"); do
+            # Remove all leading 't' characters to get clean version
+            cleaned=$(echo "$tag" | sed 's/^t*//')
+            echo "Tag: $tag -> Cleaned: $cleaned"
+
+            # Use sort to compare versions
+            if [ "$(printf '%s\n' "$HIGHEST_VERSION" "$cleaned" | sort -V | tail -n 1)" = "$cleaned" ] && [ "$cleaned" != "$HIGHEST_VERSION" ]; then
+              HIGHEST_VERSION="$cleaned"
+              HIGHEST_TAG="$tag"
+            fi
+          done
+
           echo "latest_tag=$HIGHEST_TAG" >> $GITHUB_OUTPUT
-          echo "Found highest version tag: $HIGHEST_TAG"
+          echo "Found highest version tag: $HIGHEST_TAG (version: $HIGHEST_VERSION)"
 
       - name: Bump patch version
         id: bump_version
@@ -54,10 +66,20 @@ jobs:
 
       - name: Push tag with PAT
         run: |
-          git tag ${{ steps.bump_version.outputs.new_tag }}
+          NEW_TAG="${{ steps.bump_version.outputs.new_tag }}"
+
+          # Check if tag already exists
+          if git tag -l | grep -q "^$NEW_TAG$"; then
+            echo "❌ Tag $NEW_TAG already exists. Skipping tag creation."
+            echo "This suggests the version calculation logic needs to be reviewed."
+            exit 1
+          fi
+
+          echo "✅ Creating new tag: $NEW_TAG"
+          git tag $NEW_TAG
           echo "🔐 Using PAT to push tag"
           git remote set-url origin https://x-access-token:${TOKEN}@github.com/${{ github.repository }}
-          git push --force origin ${{ steps.bump_version.outputs.new_tag }}
+          git push origin $NEW_TAG
         env:
             TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
