@@ -13,8 +13,8 @@ from typing import Dict, List, Optional, Tuple
 
 from pydantic import BaseModel, Field
 
-from ..models.trading import Order, Portfolio, Position, Trade
-from ..models.types import Money, OrderSide, OrderStatus
+from ..models.trading import Order, Portfolio, Trade
+from ..models.types import Money, OrderStatus
 
 logger = logging.getLogger(__name__)
 

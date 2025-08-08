@@ -1,6 +1,5 @@
 """Test the PR review fixes to ensure they work correctly."""
 
-
 import pytest
 
 from src.voyager_trader.market_data.cache import DataCache

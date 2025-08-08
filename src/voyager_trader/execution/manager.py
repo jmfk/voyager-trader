@@ -14,7 +14,7 @@ from typing import Dict, List, Optional
 
 from pydantic import BaseModel
 
-from ..models.trading import Account, Order, Portfolio, Position, Trade
+from ..models.trading import Order, Portfolio, Position, Trade
 from ..models.types import Money, OrderSide, OrderStatus, Symbol
 from .interfaces import BrokerageInterface, ExecutionResult
 

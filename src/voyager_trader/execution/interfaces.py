@@ -4,7 +4,6 @@ Brokerage interfaces for trading execution.
 Provides abstract interfaces for brokerage integration and a paper trading implementation.
 """
 
-import asyncio
 import uuid
 from abc import ABC, abstractmethod
 from datetime import datetime
@@ -14,7 +13,7 @@ from typing import Dict, List, Optional
 from pydantic import BaseModel, Field
 
 from ..models.trading import Account, Order, Position, Trade
-from ..models.types import Money, OrderSide, OrderStatus, OrderType, Quantity, Symbol
+from ..models.types import Money, OrderStatus, Quantity, Symbol
 
 
 class ExecutionResult(BaseModel):
@@ -37,37 +36,30 @@ class BrokerageInterface(ABC):
     @abstractmethod
     async def submit_order(self, order: Order) -> ExecutionResult:
         """Submit order to brokerage."""
-        pass
 
     @abstractmethod
     async def cancel_order(self, order_id: str) -> bool:
         """Cancel order."""
-        pass
 
     @abstractmethod
     async def modify_order(self, order_id: str, **modifications) -> bool:
         """Modify existing order."""
-        pass
 
     @abstractmethod
     async def get_order_status(self, order_id: str) -> Optional[Order]:
         """Get current order status."""
-        pass
 
     @abstractmethod
     async def get_account_info(self) -> Account:
         """Get account information."""
-        pass
 
     @abstractmethod
     async def get_positions(self) -> List[Position]:
         """Get current positions."""
-        pass
 
     @abstractmethod
     async def get_current_price(self, symbol: Symbol) -> Optional[Decimal]:
         """Get current market price for symbol."""
-        pass
 
 
 class PaperBroker(BrokerageInterface):
