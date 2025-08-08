@@ -8,19 +8,18 @@ from typing import AsyncGenerator, Dict, List, Optional
 import aiohttp
 
 from ...models.market import OHLCV, OrderBook, TickData
-from ...models.types import AssetClass
-from ...models.types import Symbol as SymbolModel
 from ...models.types import TimeFrame
-
-
-def create_symbol(code: str) -> SymbolModel:
-    """Create a Symbol object from a string code."""
-    return SymbolModel(code=code, asset_class=AssetClass.EQUITY)
-
-
-Symbol = str  # Use string symbols for market data
+from ..exceptions import (
+    AuthenticationError,
+    ConnectionError,
+    DataSourceError,
+    RateLimitError,
+    SecurityError,
+    create_http_error,
+)
 from ..interfaces import DataSource
 from ..normalizer import DataNormalizer
+from ..types import Symbol, create_symbol
 
 logger = logging.getLogger(__name__)
 
@@ -52,10 +51,33 @@ class AlphaVantageDataSource(DataSource):
         self._supported_symbols: Optional[List[Symbol]] = None
 
     async def _get_session(self) -> aiohttp.ClientSession:
-        """Get or create HTTP session."""
+        """Get or create HTTP session with connection pooling."""
         if not self.session:
-            timeout = aiohttp.ClientTimeout(total=30)
-            self.session = aiohttp.ClientSession(timeout=timeout)
+            # Configure connection pooling and timeouts
+            timeout = aiohttp.ClientTimeout(total=30, connect=5)
+            connector = aiohttp.TCPConnector(
+                limit=100,  # Total connection pool size
+                limit_per_host=10,  # Max connections per host
+                ttl_dns_cache=300,  # DNS cache TTL
+                use_dns_cache=True,
+                keepalive_timeout=30,  # Keep connections alive
+                enable_cleanup_closed=True,
+            )
+
+            # Set reasonable headers
+            headers = {
+                "User-Agent": "VOYAGER-Trader/1.0",
+                "Accept": "application/json",
+                "Accept-Encoding": "gzip, deflate",
+            }
+
+            self.session = aiohttp.ClientSession(
+                connector=connector,
+                timeout=timeout,
+                headers=headers,
+                # Limit response size for security (10MB)
+                read_bufsize=1024 * 1024 * 10,
+            )
         return self.session
 
     async def _make_request(self, params: Dict[str, str]) -> Dict:
@@ -67,23 +89,57 @@ class AlphaVantageDataSource(DataSource):
         try:
             async with session.get(self.BASE_URL, params=params) as response:
                 if response.status != 200:
-                    raise Exception(f"API request failed with status {response.status}")
+                    error_text = await response.text()
+                    raise create_http_error(
+                        response.status, error_text[:500], provider="alpha_vantage"
+                    )
+
+                # Check response size for security
+                if (
+                    response.content_length
+                    and response.content_length > 50 * 1024 * 1024
+                ):  # 50MB limit
+                    raise SecurityError(
+                        f"Response too large: {response.content_length} bytes",
+                        provider="alpha_vantage",
+                        security_type="response_size",
+                    )
 
                 data = await response.json()
 
                 # Check for API errors
                 if "Error Message" in data:
-                    raise Exception(f"Alpha Vantage error: {data['Error Message']}")
+                    error_msg = data["Error Message"]
+                    if "Invalid API call" in error_msg:
+                        raise AuthenticationError(
+                            f"Alpha Vantage API error: {error_msg}",
+                            provider="alpha_vantage",
+                        )
+                    else:
+                        raise DataSourceError(
+                            f"Alpha Vantage error: {error_msg}",
+                            provider="alpha_vantage",
+                        )
+
                 if "Note" in data:
                     # Rate limit or other notice
-                    logger.warning(f"Alpha Vantage notice: {data['Note']}")
+                    note_msg = data["Note"]
+                    if (
+                        "call frequency" in note_msg.lower()
+                        or "premium" in note_msg.lower()
+                    ):
+                        raise RateLimitError(
+                            f"Alpha Vantage rate limit: {note_msg}",
+                            provider="alpha_vantage",
+                        )
+                    logger.warning(f"Alpha Vantage notice: {note_msg}")
 
                 return data
 
         except aiohttp.ClientError as e:
-            raise Exception(f"HTTP client error: {e}")
+            raise ConnectionError(f"HTTP client error: {e}", provider="alpha_vantage")
         except asyncio.TimeoutError:
-            raise Exception("Request timeout")
+            raise ConnectionError("Request timeout", provider="alpha_vantage")
 
     async def get_historical_ohlcv(
         self,
@@ -222,7 +278,7 @@ class AlphaVantageDataSource(DataSource):
         """Get list of supported symbols."""
         if self._supported_symbols is None:
             # Alpha Vantage supports most US stocks and major cryptocurrencies
-            # For now, return a subset. In production, this could be fetched from their API
+            # For now, return a subset. In production, fetch from API
             self._supported_symbols = [
                 "AAPL",
                 "GOOGL",
@@ -270,11 +326,3 @@ class AlphaVantageDataSource(DataSource):
         if self.session:
             await self.session.close()
             self.session = None
-
-    def __del__(self):
-        """Cleanup on deletion."""
-        if self.session and not self.session.closed:
-            # Schedule session cleanup
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                loop.create_task(self.close())
