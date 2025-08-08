@@ -5,7 +5,7 @@ from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from threading import Lock
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from .types import Symbol
 
@@ -219,12 +219,14 @@ class MetricsCollector:
                 "successful_requests": total_successful,
                 "failed_requests": total_failed,
                 "cache_hits": total_cache_hits,
-                "cache_hit_rate_percent": (total_cache_hits / total_requests * 100)
-                if total_requests > 0
-                else 0,
-                "error_rate_percent": (total_failed / total_requests * 100)
-                if total_requests > 0
-                else 0,
+                "cache_hit_rate_percent": (
+                    (total_cache_hits / total_requests * 100)
+                    if total_requests > 0
+                    else 0
+                ),
+                "error_rate_percent": (
+                    (total_failed / total_requests * 100) if total_requests > 0 else 0
+                ),
                 "avg_response_time_ms": avg_response_time,
                 "total_data_bytes": total_data_bytes,
                 "total_data_mb": total_data_bytes / (1024 * 1024),
@@ -247,12 +249,16 @@ class MetricsCollector:
                     "error_rate": metrics.error_rate,
                     "current_failure_streak": metrics.current_failure_streak,
                     "avg_response_time_ms": metrics.avg_response_time_ms,
-                    "last_success": metrics.last_success.isoformat()
-                    if metrics.last_success
-                    else None,
-                    "last_failure": metrics.last_failure.isoformat()
-                    if metrics.last_failure
-                    else None,
+                    "last_success": (
+                        metrics.last_success.isoformat()
+                        if metrics.last_success
+                        else None
+                    ),
+                    "last_failure": (
+                        metrics.last_failure.isoformat()
+                        if metrics.last_failure
+                        else None
+                    ),
                 }
 
                 # Determine if provider is healthy

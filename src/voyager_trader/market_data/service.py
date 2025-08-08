@@ -1,6 +1,5 @@
 """Main Market Data Service orchestrator."""
 
-import asyncio
 import logging
 import time
 from datetime import datetime
@@ -10,7 +9,7 @@ from ..models.market import OHLCV, OrderBook, TickData
 from ..models.types import TimeFrame
 from .cache import DataCache
 from .manager import DataSourceManager
-from .monitoring import get_metrics_collector, record_request_metrics
+from .monitoring import record_request_metrics
 from .normalizer import DataNormalizer
 from .rate_limiter import RateLimiter
 from .types import Symbol

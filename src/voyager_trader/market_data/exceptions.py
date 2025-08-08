@@ -22,19 +22,16 @@ class MarketDataError(Exception):
 class DataSourceError(MarketDataError):
     """Base exception for data source related errors."""
 
-    pass
 
 
 class ConnectionError(DataSourceError):
     """Connection-related errors (network, timeout, etc.)."""
 
-    pass
 
 
 class AuthenticationError(DataSourceError):
     """Authentication/authorization errors (API key, permissions, etc.)."""
 
-    pass
 
 
 class RateLimitError(DataSourceError):
@@ -87,13 +84,11 @@ class DataValidationError(MarketDataError):
 class DataNotFoundError(MarketDataError):
     """Data not available/found errors."""
 
-    pass
 
 
 class SymbolNotSupportedError(MarketDataError):
     """Symbol not supported by provider errors."""
 
-    pass
 
 
 class TimeframeNotSupportedError(MarketDataError):
@@ -114,13 +109,11 @@ class TimeframeNotSupportedError(MarketDataError):
 class CacheError(MarketDataError):
     """Cache-related errors."""
 
-    pass
 
 
 class CacheCorruptionError(CacheError):
     """Cache data corruption errors."""
 
-    pass
 
 
 class ServiceUnavailableError(DataSourceError):

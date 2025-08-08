@@ -1,15 +1,11 @@
 """Test the PR review fixes to ensure they work correctly."""
 
-import asyncio
-from datetime import datetime, timedelta
-from unittest.mock import Mock, patch
 
 import pytest
 
 from src.voyager_trader.market_data.cache import DataCache
 from src.voyager_trader.market_data.exceptions import (
     AuthenticationError,
-    ConnectionError,
     DataSourceError,
     MarketDataError,
     RateLimitError,
@@ -21,7 +17,6 @@ from src.voyager_trader.market_data.monitoring import (
 )
 from src.voyager_trader.market_data.rate_limiter import RateLimiter
 from src.voyager_trader.market_data.types import (
-    Symbol,
     create_symbol,
     ensure_symbol_object,
     normalize_symbol,
