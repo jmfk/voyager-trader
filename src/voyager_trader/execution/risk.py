@@ -47,7 +47,6 @@ class RiskLimits(BaseModel):
 class RiskViolation(Exception):
     """Exception raised when risk limits are violated."""
 
-    pass
 
 
 class RiskManager:
