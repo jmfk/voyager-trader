@@ -13,10 +13,8 @@ Follows architecture defined in ADR-0014.
 """
 
 import ast
-import asyncio
 import json
 import logging
-import os
 import subprocess
 import sys
 import tempfile
@@ -37,7 +35,6 @@ from .curriculum import AutomaticCurriculum
 from .llm_service import (
     LLMError,
     LLMRequest,
-    LLMResponse,
     ProviderError,
     UniversalLLMClient,
     get_global_llm_client,
@@ -257,9 +254,11 @@ class LLMIntegrationLayer:
                 model=self.config.llm_model,
                 temperature=self.config.temperature,
                 max_tokens=self.config.max_tokens,
-                provider=self.config.llm_provider.value
-                if isinstance(self.config.llm_provider, LLMProvider)
-                else self.config.llm_provider,
+                provider=(
+                    self.config.llm_provider.value
+                    if isinstance(self.config.llm_provider, LLMProvider)
+                    else self.config.llm_provider
+                ),
             )
 
             # Generate response
