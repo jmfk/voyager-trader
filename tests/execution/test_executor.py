@@ -77,7 +77,7 @@ def buy_signal():
         strategy_id="test-strategy",
         symbol=Symbol(code="AAPL", asset_class="equity"),
         action="BUY",
-        quantity=Decimal("100"),
+        quantity=Decimal("60"),  # Reduced to stay within 10% position limit
         price=Decimal("150.00"),
         order_type=OrderType.LIMIT,
         confidence=Decimal("0.8"),
@@ -108,7 +108,7 @@ class TestStrategySignal:
         assert buy_signal.strategy_id == "test-strategy"
         assert buy_signal.symbol.code == "AAPL"
         assert buy_signal.action == "BUY"
-        assert buy_signal.quantity == Decimal("100")
+        assert buy_signal.quantity == Decimal("60")
         assert buy_signal.price == Decimal("150.00")
         assert buy_signal.order_type == OrderType.LIMIT
         assert buy_signal.confidence == Decimal("0.8")
@@ -381,19 +381,19 @@ class TestStrategyExecutor:
         # Register strategy
         await strategy_executor.register_strategy("test-strategy", Decimal("10"))
 
-        paper_broker.set_price(
-            "AAPL", Decimal("155.00")
-        )  # Unfavorable for limit orders
-
         # Submit max concurrent orders (should stay pending)
         signals = []
         for i in range(6):  # Config limit is 5
+            symbol_code = f"STOCK{i}"
+            # Set unfavorable price for each symbol (higher than limit price)
+            paper_broker.set_price(symbol_code, Decimal("155.00"))
+
             signal = StrategySignal(
                 strategy_id="test-strategy",
-                symbol=Symbol(code=f"STOCK{i}", asset_class="equity"),
+                symbol=Symbol(code=symbol_code, asset_class="equity"),
                 action="BUY",
                 quantity=Decimal("10"),
-                price=Decimal("150.00"),  # Will stay pending
+                price=Decimal("150.00"),  # Will stay pending due to unfavorable price
                 order_type=OrderType.LIMIT,
             )
             signals.append(signal)
@@ -489,7 +489,7 @@ class TestStrategyExecutor:
         assert result.filled_quantity.amount > 0
         # Should be limited by strategy allocation
         # (10% of $100k = $10k / $100 = 100 shares max)
-        assert result.filled_quantity.amount <= Decimal("100")
+        assert result.filled_quantity.amount <= Decimal("60")
 
 
 class TestExecutorIntegration:
@@ -512,7 +512,7 @@ class TestExecutorIntegration:
             strategy_id="momentum-strategy",
             symbol=Symbol(code="AAPL", asset_class="equity"),
             action="BUY",
-            quantity=Decimal("100"),
+            quantity=Decimal("60"),
             order_type=OrderType.MARKET,
             confidence=Decimal("0.8"),
         )

@@ -391,47 +391,61 @@ class PortfolioManager:
             logger.error(f"Error syncing with broker: {e}")
 
     async def _update_portfolio_metrics(self) -> None:
-        """Update portfolio metrics."""
-        total_value = self.portfolio.cash_balance.amount
+        """Update portfolio metrics atomically.
+
+        Note: This method should only be called from within an async lock context
+        to prevent race conditions with concurrent portfolio updates.
+        """
+        # Capture current portfolio state for atomic calculation
+        current_portfolio = self.portfolio
+        current_positions = dict(self._positions)
+
+        # Calculate all metrics in one pass to ensure consistency
+        total_value = current_portfolio.cash_balance.amount
         unrealized_pnl = Decimal("0")
 
         # Sum position values and unrealized P&L
-        for position in self._positions.values():
+        for position in current_positions.values():
             if position.is_open:
                 if position.market_value:
                     total_value += position.market_value
                 if position.unrealized_pnl:
                     unrealized_pnl += position.unrealized_pnl
 
-        # Update high water mark
+        # Update high water mark atomically
+        new_high_water_mark = self._high_water_mark
         if total_value > self._high_water_mark.amount:
-            self._high_water_mark = Money(
-                amount=total_value, currency=self.portfolio.base_currency
+            new_high_water_mark = Money(
+                amount=total_value, currency=current_portfolio.base_currency
             )
 
-        # Calculate drawdown
-        if self._high_water_mark.amount > 0:
+        # Calculate drawdown using the potentially updated high water mark
+        if new_high_water_mark.amount > 0:
             drawdown_percent = (
-                (self._high_water_mark.amount - total_value)
-                / self._high_water_mark.amount
+                (new_high_water_mark.amount - total_value)
+                / new_high_water_mark.amount
                 * 100
             )
         else:
             drawdown_percent = Decimal("0")
 
-        # Update portfolio
-        self.portfolio = self.portfolio.update_metrics(
+        # Determine final max drawdown
+        final_max_drawdown = max(drawdown_percent, current_portfolio.max_drawdown)
+
+        # Apply all updates atomically
+        self._high_water_mark = new_high_water_mark
+        self.portfolio = current_portfolio.update_metrics(
             unrealized_pnl=Money(
-                amount=unrealized_pnl, currency=self.portfolio.base_currency
+                amount=unrealized_pnl, currency=current_portfolio.base_currency
             ),
             total_value=Money(
-                amount=total_value, currency=self.portfolio.base_currency
+                amount=total_value, currency=current_portfolio.base_currency
             ),
         )
 
-        # Update max drawdown if necessary
-        if drawdown_percent > self.portfolio.max_drawdown:
-            self.portfolio = self.portfolio.update(max_drawdown=drawdown_percent)
+        # Update max drawdown if it changed
+        if final_max_drawdown > current_portfolio.max_drawdown:
+            self.portfolio = self.portfolio.update(max_drawdown=final_max_drawdown)
 
     def get_position(self, symbol: str) -> Optional[Position]:
         """Get position by symbol."""

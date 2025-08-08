@@ -48,7 +48,6 @@ class RiskViolation(Exception):
     """Exception raised when risk limits are violated."""
 
 
-
 class RiskManager:
     """Comprehensive risk management system."""
 
@@ -313,15 +312,18 @@ class RiskManager:
         logger.critical(f"TRADING SHUTDOWN INITIATED: {reason}")
 
     def get_risk_metrics(
-        self, portfolio: Portfolio, account: Account
+        self, portfolio: Portfolio, account: Optional[Account] = None
     ) -> Dict[str, Decimal]:
         """Get current risk metrics."""
         total_exposure = portfolio.total_value.amount - portfolio.cash_balance.amount
-        leverage = (
-            total_exposure / account.total_equity.amount
-            if account.total_equity.amount > 0
-            else Decimal("0")
-        )
+
+        # Calculate leverage using account if available, otherwise use portfolio
+        if account and account.total_equity.amount > 0:
+            leverage = total_exposure / account.total_equity.amount
+        elif portfolio.total_value.amount > 0:
+            leverage = total_exposure / portfolio.total_value.amount
+        else:
+            leverage = Decimal("0")
 
         return {
             "leverage": leverage,
