@@ -28,6 +28,9 @@ mypy>=1.0.0
 aiohttp>=3.8.0
 asyncio-throttle>=1.0.0
 
+# LLM providers
+anthropic>=0.17.0
+
 # Configuration
 python-dotenv>=1.0.0
 pyyaml>=6.0.0
