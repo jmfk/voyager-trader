@@ -29,7 +29,6 @@ class DataSource(ABC):
         limit: Optional[int] = None,
     ) -> List[OHLCV]:
         """Fetch historical OHLCV data for a symbol."""
-        pass
 
     @abstractmethod
     async def get_latest_ohlcv(
@@ -38,7 +37,6 @@ class DataSource(ABC):
         timeframe: TimeFrame,
     ) -> Optional[OHLCV]:
         """Fetch the latest OHLCV bar for a symbol."""
-        pass
 
     @abstractmethod
     async def stream_tick_data(
@@ -46,7 +44,6 @@ class DataSource(ABC):
         symbol: Symbol,
     ) -> AsyncGenerator[TickData, None]:
         """Stream real-time tick data for a symbol."""
-        pass
 
     @abstractmethod
     async def get_order_book(
@@ -55,22 +52,18 @@ class DataSource(ABC):
         depth: int = 10,
     ) -> Optional[OrderBook]:
         """Fetch current order book snapshot."""
-        pass
 
     @abstractmethod
     async def get_supported_symbols(self) -> List[Symbol]:
         """Get list of symbols supported by this data source."""
-        pass
 
     @abstractmethod
     async def validate_symbol(self, symbol: Symbol) -> bool:
         """Check if a symbol is supported by this data source."""
-        pass
 
     @abstractmethod
     async def health_check(self) -> bool:
         """Check if the data source is healthy and accessible."""
-        pass
 
     @property
     def is_enabled(self) -> bool:
@@ -115,7 +108,6 @@ class DataFetcher(ABC):
         Returns:
             Result from the data source method
         """
-        pass
 
     @abstractmethod
     async def batch_fetch(
@@ -131,4 +123,3 @@ class DataFetcher(ABC):
         Returns:
             List of results corresponding to each request
         """
-        pass

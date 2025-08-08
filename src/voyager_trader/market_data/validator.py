@@ -16,7 +16,6 @@ logger = logging.getLogger(__name__)
 class DataValidationError(Exception):
     """Exception raised for data validation failures."""
 
-    pass
 
 
 class DataValidator:
