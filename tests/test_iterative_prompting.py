@@ -428,7 +428,7 @@ class TestLLMIntegrationLayer:
     @patch("src.voyager_trader.prompting.openai")
     def test_openai_initialization(self, mock_openai):
         """Test OpenAI provider initialization."""
-        llm_layer = LLMIntegrationLayer(self.config)
+        LLMIntegrationLayer(self.config)
         assert mock_openai.api_key == "test_key"
 
     def test_missing_api_key_error(self):

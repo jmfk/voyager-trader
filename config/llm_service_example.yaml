@@ -30,14 +30,15 @@ llm_service:
         - gpt-4-turbo
         - gpt-4-turbo-preview
 
-      # Rate limiting (optional)
+      # Rate limiting (optional) - standardized units across all providers
       rate_limits:
-        requests_per_minute: 60
-        tokens_per_minute: 40000
+        requests_per_minute: 60      # Max API requests per minute
+        tokens_per_minute: 40000     # Max tokens per minute (input + estimated output)
 
       # Provider-specific settings
       timeout: 60
       max_retries: 3
+      health_check_interval: 180  # Check every 3 minutes (faster for critical API)
 
     # Anthropic Claude Configuration
     anthropic:
@@ -54,6 +55,7 @@ llm_service:
       # Provider-specific settings
       timeout: 60
       max_retries: 3
+      health_check_interval: 240  # Check every 4 minutes (moderate for external API)
 
     # Ollama Local Models Configuration
     ollama:
@@ -79,6 +81,7 @@ llm_service:
       # Provider-specific settings
       timeout: 120            # Longer timeout for local models
       max_retries: 2
+      health_check_interval: 600  # Check every 10 minutes (slower for local)
 
     # Azure OpenAI Configuration (disabled by default)
     azure_openai:

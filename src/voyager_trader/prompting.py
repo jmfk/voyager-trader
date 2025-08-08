@@ -34,6 +34,7 @@ except ImportError:
 from .curriculum import AutomaticCurriculum
 from .llm_service import (
     LLMError,
+    LLMProvider,
     LLMRequest,
     ProviderError,
     UniversalLLMClient,
@@ -62,14 +63,6 @@ class SafetyValidationError(PromptingError):
 
 class PerformanceEvaluationError(PromptingError):
     """Exception raised during performance evaluation."""
-
-
-class LLMProvider(str, Enum):
-    """Available LLM providers (deprecated - use llm_service.LLMProvider)."""
-
-    OPENAI = "openai"
-    ANTHROPIC = "anthropic"
-    OLLAMA = "ollama"
 
 
 class ExecutionStatus(str, Enum):
@@ -276,9 +269,10 @@ class LLMIntegrationLayer:
 
     def _get_system_prompt(self) -> str:
         """Get system prompt for strategy generation."""
-        return """You are an expert trading strategy developer. Generate Python code that:
+        return """You are an expert trading strategy developer. Generate code that:
 1. Implements a complete trading_strategy(market_data) function
-2. Takes market data as input and returns trading decisions as {'action': 'buy'|'sell'|'hold', 'quantity': int}
+2. Takes market data as input and returns trading decisions
+   as {'action': 'buy'|'sell'|'hold', 'quantity': int}
 3. Uses only allowed imports and follows safety constraints
 4. Includes proper error handling and data validation
 5. Optimizes for risk-adjusted returns
@@ -352,7 +346,10 @@ class CodeExecutionEnvironment:
                 )
 
     def _execute_in_subprocess(
-        self, strategy_file: Path, market_data: Dict[str, Any], start_time: float
+        self,
+        strategy_file: Path,
+        market_data: Dict[str, Any],
+        start_time: float,
     ) -> ExecutionResult:
         """Execute code in isolated subprocess with resource monitoring."""
         execution_script = self._create_execution_script(strategy_file, market_data)
@@ -409,7 +406,9 @@ class CodeExecutionEnvironment:
                 process.kill()
                 return ExecutionResult(
                     status=ExecutionStatus.TIMEOUT,
-                    error_message=f"Execution timed out after {self.config.execution_timeout}s",
+                    error_message=(
+                        f"Execution timed out after {self.config.execution_timeout}s"
+                    ),
                     execution_time=self.config.execution_timeout,
                 )
 
@@ -553,7 +552,13 @@ class SafetyMonitor:
         """Check if function call is safe."""
         if isinstance(node.func, ast.Name):
             func_name = node.func.id
-            dangerous_functions = ["eval", "exec", "__import__", "open", "input"]
+            dangerous_functions = [
+                "eval",
+                "exec",
+                "__import__",
+                "open",
+                "input",
+            ]
             if func_name in dangerous_functions:
                 return f"Dangerous function call: {func_name}"
         return None
@@ -908,7 +913,8 @@ class StrategyRefinementEngine:
                 convergence_reason = self._check_convergence_criteria(iteration)
                 if convergence_reason:
                     self.logger.info(
-                        f"Converged after {iteration + 1} iterations: {convergence_reason.value}"
+                        f"Converged after {iteration + 1} iterations: "
+                        f"{convergence_reason.value}"
                     )
                     break
 
@@ -954,7 +960,11 @@ class StrategyRefinementEngine:
         # Add available skills
         if context.available_skills:
             prompt_parts.extend(
-                ["", "AVAILABLE SKILLS:", "- " + "\n- ".join(context.available_skills)]
+                [
+                    "",
+                    "AVAILABLE SKILLS:",
+                    "- " + "\n- ".join(context.available_skills),
+                ]
             )
 
         # Add target metrics
@@ -999,7 +1009,8 @@ class StrategyRefinementEngine:
                 "",
                 "REQUIREMENTS:",
                 "1. Generate a complete trading_strategy(market_data) function",
-                "2. Return trading decisions as {'action': 'buy'|'sell'|'hold', 'quantity': int}",
+                "2. Return trading decisions as "
+                "{'action': 'buy'|'sell'|'hold', 'quantity': int}",
                 "3. Use only allowed imports and safe coding practices",
                 "4. Include proper error handling and data validation",
                 "5. Optimize for risk-adjusted returns",
@@ -1082,7 +1093,8 @@ class StrategyRefinementEngine:
 
 
 class IterativePrompting:
-    """Main iterative prompting system interface with curriculum and skill integration."""
+    """Main iterative prompting system interface with curriculum and skill
+    integration."""
 
     def __init__(
         self,
@@ -1118,7 +1130,8 @@ class IterativePrompting:
 
             self.logger.info(
                 f"Strategy generation completed: {result.total_iterations} iterations, "
-                f"best Sharpe ratio: {result.best_performance.get('sharpe_ratio', 0):.3f}, "
+                f"best Sharpe ratio: "
+                f"{result.best_performance.get('sharpe_ratio', 0):.3f}, "
                 f"converged due to: {result.convergence_reason.value}"
             )
 
@@ -1222,8 +1235,10 @@ class IterativePrompting:
 
                     # Add curriculum-specific safety constraints
                     enhancements["safety_constraints"] = [
-                        "Follow risk management principles appropriate for difficulty level",
-                        f"Ensure strategy complexity matches {current_task.difficulty_level} level",
+                        "Follow risk management principles appropriate for "
+                        "difficulty level",
+                        f"Ensure strategy complexity matches "
+                        f"{current_task.difficulty_level} level",
                         "Implement proper position sizing for learning stage",
                     ]
 
@@ -1298,7 +1313,8 @@ class VoyagerIterativeSystem:
         self.llm_client = llm_client
 
     async def run_learning_episode(self, initial_task: str = None) -> Dict[str, Any]:
-        """Run a complete learning episode with curriculum-guided strategy development."""
+        """Run a complete learning episode with curriculum-guided strategy
+        development."""
         episode_results = {
             "tasks_completed": 0,
             "strategies_generated": 0,

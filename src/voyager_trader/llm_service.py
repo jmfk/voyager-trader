@@ -14,6 +14,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -137,32 +138,43 @@ class BaseLLMProvider(ABC):
         self._last_health_check = 0.0
         self._is_healthy = True
         self._request_count = 0
+        self._token_count = 0
         self._last_request_time = time.time()
+        self._token_window_start = time.time()
 
     @abstractmethod
     async def generate(self, request: LLMRequest) -> LLMResponse:
         """Generate response from LLM."""
+        pass
 
     @abstractmethod
     async def stream_generate(self, request: LLMRequest) -> AsyncIterator[LLMResponse]:
         """Generate streaming response from LLM."""
+        pass
 
     @abstractmethod
     def get_available_models(self) -> List[str]:
         """Get list of available models for this provider."""
+        pass
 
     @abstractmethod
     async def health_check(self) -> bool:
         """Check if provider is healthy."""
+        pass
 
-    async def _enforce_rate_limits(self) -> None:
-        """Enforce rate limits for the provider."""
+    async def _enforce_rate_limits(self, estimated_tokens: int = 0) -> None:
+        """Enforce rate limits for the provider.
+
+        Args:
+            estimated_tokens: Estimated tokens for request (for token-based limiting)
+        """
         if not self.config.rate_limits:
             return
 
         current_time = time.time()
         time_window = 60.0  # 1 minute
 
+        # Check requests per minute limit
         requests_per_minute = self.config.rate_limits.get("requests_per_minute", 0)
         if requests_per_minute > 0:
             time_since_last = current_time - self._last_request_time
@@ -171,12 +183,58 @@ class BaseLLMProvider(ABC):
                 and time_since_last < time_window
             ):
                 wait_time = time_window - time_since_last
-                self.logger.info(f"Rate limit reached, waiting {wait_time:.2f} seconds")
+                self.logger.info(
+                    f"Request rate limit reached ({requests_per_minute}/min), "
+                    f"waiting {wait_time:.2f} seconds"
+                )
                 await asyncio.sleep(wait_time)
                 self._request_count = 0
+                self._last_request_time = current_time
+
+        # Check tokens per minute limit
+        tokens_per_minute = self.config.rate_limits.get("tokens_per_minute", 0)
+        if tokens_per_minute > 0 and estimated_tokens > 0:
+            time_since_window_start = current_time - self._token_window_start
+
+            # Reset token count if window has passed
+            if time_since_window_start >= time_window:
+                self._token_count = 0
+                self._token_window_start = current_time
+                time_since_window_start = 0
+
+            # Check if adding this request would exceed token limit
+            if self._token_count + estimated_tokens > tokens_per_minute:
+                wait_time = time_window - time_since_window_start
+                self.logger.info(
+                    f"Token rate limit reached ({tokens_per_minute}/min), "
+                    f"waiting {wait_time:.2f} seconds"
+                )
+                await asyncio.sleep(wait_time)
+                self._token_count = 0
+                self._token_window_start = current_time
 
         self._request_count += 1
+        self._token_count += estimated_tokens
         self._last_request_time = current_time
+
+    def _estimate_tokens(self, request: LLMRequest) -> int:
+        """Estimate token count for rate limiting.
+
+        Simple estimation: 4 characters = 1 token (rough approximation).
+        More accurate implementations could use tokenizer libraries.
+        """
+        total_chars = 0
+        for message in request.messages:
+            content = message.get("content", "")
+            total_chars += len(content)
+
+        # Add estimated response tokens (max_tokens or a reasonable default)
+        response_tokens = min(request.max_tokens, 500)  # Conservative estimate
+
+        # 4 chars per token is a rough approximation
+        estimated_tokens = (total_chars // 4) + response_tokens
+
+        return max(estimated_tokens, 10)  # Minimum 10 tokens per request
 
     def _validate_request(self, request: LLMRequest) -> None:
         """Validate request parameters."""
@@ -201,7 +259,8 @@ class BaseLLMProvider(ABC):
 
                 wait_time = self.config.retry_delay * (2**attempt)
                 self.logger.warning(
-                    f"Attempt {attempt + 1} failed: {str(e)}, retrying in {wait_time:.2f}s"
+                    f"Attempt {attempt + 1} failed: {str(e)}, "
+                    f"retrying in {wait_time:.2f}s"
                 )
                 await asyncio.sleep(wait_time)
 
@@ -232,10 +291,39 @@ class OpenAIProvider(BaseLLMProvider):
                 "gpt-4o",
             ]
 
+    async def __aenter__(self):
+        """Async context manager entry."""
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit with cleanup."""
+        await self.close()
+
+    async def close(self):
+        """Close OpenAI client connections."""
+        if hasattr(self.client, "close"):
+            try:
+                await self.client.close()
+            except Exception as e:
+                self.logger.error(f"Error closing OpenAI client: {e}")
+
+    def __del__(self):
+        """Cleanup on deletion."""
+        if hasattr(self, "client") and self.client:
+            import warnings
+
+            warnings.warn(
+                "OpenAIProvider client was not properly closed. "
+                "Use async context manager or call close() explicitly.",
+                ResourceWarning,
+                stacklevel=2,
+            )
+
     async def generate(self, request: LLMRequest) -> LLMResponse:
         """Generate response from OpenAI."""
         self._validate_request(request)
-        await self._enforce_rate_limits()
+        estimated_tokens = self._estimate_tokens(request)
+        await self._enforce_rate_limits(estimated_tokens)
 
         try:
             response = await self._retry_on_failure(
@@ -277,7 +365,8 @@ class OpenAIProvider(BaseLLMProvider):
     async def stream_generate(self, request: LLMRequest) -> AsyncIterator[LLMResponse]:
         """Generate streaming response from OpenAI."""
         self._validate_request(request)
-        await self._enforce_rate_limits()
+        estimated_tokens = self._estimate_tokens(request)
+        await self._enforce_rate_limits(estimated_tokens)
 
         try:
             stream = await self._retry_on_failure(
@@ -352,6 +441,32 @@ class OllamaProvider(BaseLLMProvider):
                 "llama3:70b",
             ]
 
+    async def __aenter__(self):
+        """Async context manager entry."""
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit with session cleanup."""
+        await self.close()
+
+    async def close(self):
+        """Close aiohttp session."""
+        if self.session and not self.session.closed:
+            await self.session.close()
+            self.session = None
+
+    def __del__(self):
+        """Cleanup on deletion."""
+        if hasattr(self, "session") and self.session and not self.session.closed:
+            import warnings
+
+            warnings.warn(
+                "OllamaProvider session was not properly closed. "
+                "Use async context manager or call close() explicitly.",
+                ResourceWarning,
+                stacklevel=2,
+            )
+
     async def _get_session(self):
         """Get or create aiohttp session."""
         if self.session is None or self.session.closed:
@@ -362,7 +477,8 @@ class OllamaProvider(BaseLLMProvider):
     async def generate(self, request: LLMRequest) -> LLMResponse:
         """Generate response from Ollama."""
         self._validate_request(request)
-        await self._enforce_rate_limits()
+        estimated_tokens = self._estimate_tokens(request)
+        await self._enforce_rate_limits(estimated_tokens)
 
         session = await self._get_session()
 
@@ -420,7 +536,8 @@ class OllamaProvider(BaseLLMProvider):
     async def stream_generate(self, request: LLMRequest) -> AsyncIterator[LLMResponse]:
         """Generate streaming response from Ollama."""
         self._validate_request(request)
-        await self._enforce_rate_limits()
+        estimated_tokens = self._estimate_tokens(request)
+        await self._enforce_rate_limits(estimated_tokens)
 
         session = await self._get_session()
 
@@ -458,9 +575,9 @@ class OllamaProvider(BaseLLMProvider):
                                     content=chunk["response"],
                                     model=request.model,
                                     provider=self.config.name,
-                                    finish_reason=(
-                                        "stop" if chunk.get("done") else "continue"
-                                    ),
+                                    finish_reason="stop"
+                                    if chunk.get("done")
+                                    else "continue",
                                 )
                         except json.JSONDecodeError:
                             continue
@@ -472,13 +589,66 @@ class OllamaProvider(BaseLLMProvider):
                 model=request.model,
             )
 
+    def _sanitize_content(self, content: str) -> str:
+        """Sanitize message content to prevent prompt injection attacks.
+
+        Args:
+            content: Raw message content
+
+        Returns:
+            Sanitized content safe for use in prompts
+        """
+        if not content:
+            return ""
+
+        # Remove potential prompt injection patterns
+        sanitized = content
+
+        # Remove role indicators that could confuse the model
+        role_patterns = [
+            "System:",
+            "User:",
+            "Assistant:",
+            "Human:",
+            "AI:",
+            "Bot:",
+        ]
+
+        for pattern in role_patterns:
+            # Case-insensitive replacement, but preserve the original text structure
+            sanitized = re.sub(
+                re.escape(pattern),
+                pattern.replace(":", ""),
+                sanitized,
+                flags=re.IGNORECASE,
+            )
+
+        # Remove excessive newlines that could break prompt structure
+        sanitized = re.sub(r"\n{3,}", "\n\n", sanitized)
+
+        # Trim whitespace
+        sanitized = sanitized.strip()
+
+        # Limit content length to prevent extremely long prompts
+        max_length = 8000  # Reasonable limit for single message
+        if len(sanitized) > max_length:
+            sanitized = sanitized[:max_length] + "...[truncated]"
+
+        return sanitized
+
     def _convert_messages_to_prompt(self, messages: List[Dict[str, str]]) -> str:
-        """Convert OpenAI-style messages to Ollama prompt format."""
+        """Convert OpenAI-style messages to Ollama format with sanitization."""
         prompt_parts = []
 
         for message in messages:
             role = message.get("role", "user")
-            content = message.get("content", "")
+            raw_content = message.get("content", "")
+
+            # Sanitize content to prevent prompt injection
+            content = self._sanitize_content(raw_content)
+
+            if not content:  # Skip empty messages
+                continue
 
             if role == "system":
                 prompt_parts.append(f"System: {content}")
@@ -486,6 +656,13 @@ class OllamaProvider(BaseLLMProvider):
                 prompt_parts.append(f"User: {content}")
             elif role == "assistant":
                 prompt_parts.append(f"Assistant: {content}")
+            else:
+                # For unknown roles, default to user but log a warning
+                self.logger.warning(f"Unknown message role '{role}', treating as user")
+                prompt_parts.append(f"User: {content}")
+
+        if not prompt_parts:  # If all messages were empty/invalid
+            prompt_parts.append("User: Hello")  # Safe default
 
         return "\n\n".join(prompt_parts) + "\n\nAssistant:"
 
@@ -527,10 +704,39 @@ class AnthropicProvider(BaseLLMProvider):
                 "claude-3-5-sonnet-20241022",
             ]
 
+    async def __aenter__(self):
+        """Async context manager entry."""
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit with cleanup."""
+        await self.close()
+
+    async def close(self):
+        """Close Anthropic client connections."""
+        if hasattr(self.client, "close"):
+            try:
+                await self.client.close()
+            except Exception as e:
+                self.logger.error(f"Error closing Anthropic client: {e}")
+
+    def __del__(self):
+        """Cleanup on deletion."""
+        if hasattr(self, "client") and self.client:
+            import warnings
+
+            warnings.warn(
+                "AnthropicProvider client was not properly closed. "
+                "Use async context manager or call close() explicitly.",
+                ResourceWarning,
+                stacklevel=2,
+            )
+
     async def generate(self, request: LLMRequest) -> LLMResponse:
         """Generate response from Anthropic."""
         self._validate_request(request)
-        await self._enforce_rate_limits()
+        estimated_tokens = self._estimate_tokens(request)
+        await self._enforce_rate_limits(estimated_tokens)
 
         # Convert messages format for Anthropic
         system_prompt = None
@@ -585,7 +791,8 @@ class AnthropicProvider(BaseLLMProvider):
     async def stream_generate(self, request: LLMRequest) -> AsyncIterator[LLMResponse]:
         """Generate streaming response from Anthropic."""
         self._validate_request(request)
-        await self._enforce_rate_limits()
+        estimated_tokens = self._estimate_tokens(request)
+        await self._enforce_rate_limits(estimated_tokens)
 
         # Convert messages format for Anthropic
         system_prompt = None
@@ -731,9 +938,223 @@ class LLMService:
         self.config = config
         self.registry = ProviderRegistry()
         self.logger = logging.getLogger(__name__)
+
+        # Validate configuration before initializing providers
+        self._validate_service_config()
+
         self._initialize_providers()
-        self._last_health_check = 0.0
         self._provider_health: Dict[str, bool] = {}
+        self._provider_last_health_check: Dict[str, float] = {}
+
+    async def __aenter__(self):
+        """Async context manager entry."""
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit with cleanup."""
+        await self.close()
+
+    async def close(self):
+        """Close all provider sessions."""
+        for provider in self.registry.providers.values():
+            if hasattr(provider, "close"):
+                try:
+                    await provider.close()
+                except Exception as e:
+                    self.logger.error(
+                        f"Error closing provider {provider.config.name}: {e}"
+                    )
+
+    def __del__(self):
+        """Cleanup on deletion."""
+        if hasattr(self, "registry") and self.registry:
+            import warnings
+
+            warnings.warn(
+                "LLMService was not properly closed. "
+                "Use async context manager or call close() explicitly.",
+                ResourceWarning,
+                stacklevel=2,
+            )
+
+    def _validate_service_config(self) -> None:  # noqa: C901
+        """Validate service configuration and provider settings."""
+        errors = []
+        warnings = []
+
+        # Validate basic service config
+        if not self.config.default_provider:
+            errors.append("default_provider cannot be empty")
+
+        if not self.config.providers:
+            errors.append("At least one provider must be configured")
+
+        # Check if default provider exists in configured providers
+        if (
+            self.config.default_provider
+            and self.config.default_provider not in self.config.providers
+        ):
+            errors.append(
+                f"default_provider '{self.config.default_provider}' "
+                f"not found in configured providers"
+            )
+
+        # Validate fallback chain
+        for provider_name in self.config.fallback_chain:
+            if provider_name not in self.config.providers:
+                warnings.append(f"Fallback provider '{provider_name}' not configured")
+
+        # Validate each provider configuration
+        enabled_providers = []
+        for name, provider_config in self.config.providers.items():
+            provider_errors = self._validate_provider_config(name, provider_config)
+            errors.extend(provider_errors)
+
+            if provider_config.enabled:
+                enabled_providers.append(name)
+
+        # Check if at least one provider is enabled
+        if not enabled_providers:
+            errors.append("At least one provider must be enabled")
+
+        # Check if default provider is enabled
+        if (
+            self.config.default_provider in self.config.providers
+            and not self.config.providers[self.config.default_provider].enabled
+        ):
+            warnings.append(
+                f"Default provider '{self.config.default_provider}' is disabled"
+            )
+
+        # Log warnings
+        for warning in warnings:
+            self.logger.warning(f"Configuration warning: {warning}")
+
+        # Raise exception for errors
+        if errors:
+            error_msg = "Configuration validation failed:\n" + "\n".join(
+                f"  - {error}" for error in errors
+            )
+            raise LLMError(error_msg)
+
+        self.logger.info(
+            f"Configuration validated successfully. "
+            f"Enabled providers: {', '.join(enabled_providers)}"
+        )
+
+    def _validate_provider_config(  # noqa: C901
+        self, name: str, config: ProviderConfig
+    ) -> List[str]:
+        """Validate individual provider configuration.
+
+        Returns:
+            List of validation error messages
+        """
+        errors = []
+
+        # Validate provider name matches config
+        if config.name != name:
+            errors.append(
+                f"Provider '{name}' config has mismatched name '{config.name}'"
+            )
+
+        # Validate timeout values
+        if config.timeout <= 0:
+            errors.append(f"Provider '{name}' timeout must be positive")
+        elif config.timeout > 600:
+            errors.append(f"Provider '{name}' timeout too high (max 600 seconds)")
+
+        # Validate retry settings
+        if config.max_retries < 0:
+            errors.append(f"Provider '{name}' max_retries must be non-negative")
+        elif config.max_retries > 10:
+            errors.append(f"Provider '{name}' max_retries too high (max 10)")
+
+        if config.retry_delay <= 0:
+            errors.append(f"Provider '{name}' retry_delay must be positive")
+
+        # Validate health check interval
+        if config.health_check_interval <= 0:
+            errors.append(f"Provider '{name}' health_check_interval must be positive")
+        elif config.health_check_interval > 3600:
+            errors.append(
+                f"Provider '{name}' health_check_interval too high (max 1 hour)"
+            )
+
+        # Validate rate limits
+        if config.rate_limits:
+            for limit_type, limit_value in config.rate_limits.items():
+                if limit_type not in ["requests_per_minute", "tokens_per_minute"]:
+                    errors.append(
+                        f"Provider '{name}' unknown rate limit type '{limit_type}'"
+                    )
+                elif limit_value <= 0:
+                    errors.append(
+                        f"Provider '{name}' rate limit '{limit_type}' must be positive"
+                    )
+
+        # Provider-specific validation
+        if config.name == "openai":
+            errors.extend(self._validate_openai_config(name, config))
+        elif config.name == "anthropic":
+            errors.extend(self._validate_anthropic_config(name, config))
+        elif config.name == "ollama":
+            errors.extend(self._validate_ollama_config(name, config))
+
+        return errors
+
+    def _validate_openai_config(self, name: str, config: ProviderConfig) -> List[str]:
+        """Validate OpenAI-specific configuration."""
+        errors = []
+
+        # Check API key (allow environment variables)
+        if not config.api_key and not os.getenv("OPENAI_API_KEY"):
+            errors.append(
+                f"OpenAI provider '{name}' requires api_key or OPENAI_API_KEY env var"
+            )
+
+        # Validate base_url if provided
+        if config.base_url and not config.base_url.startswith(("http://", "https://")):
+            errors.append(
+                f"OpenAI provider '{name}' base_url must be a valid HTTP(S) URL"
+            )
+
+        return errors
+
+    def _validate_anthropic_config(
+        self, name: str, config: ProviderConfig
+    ) -> List[str]:
+        """Validate Anthropic-specific configuration."""
+        errors = []
+
+        # Check API key (allow environment variables)
+        if not config.api_key and not os.getenv("ANTHROPIC_API_KEY"):
+            errors.append(
+                f"Anthropic provider '{name}' requires api_key or "
+                f"ANTHROPIC_API_KEY env var"
+            )
+
+        return errors
+
+    def _validate_ollama_config(self, name: str, config: ProviderConfig) -> List[str]:
+        """Validate Ollama-specific configuration."""
+        errors = []
+
+        # Validate base_url
+        if config.base_url and not config.base_url.startswith(("http://", "https://")):
+            errors.append(
+                f"Ollama provider '{name}' base_url must be a valid " f"HTTP(S) URL"
+            )
+
+        # Ollama typically has longer timeouts, warn if too short
+        if config.timeout < 30:
+            # This is a warning, but we'll add it as an error since Ollama
+            # needs time
+            errors.append(
+                f"Ollama provider '{name}' timeout should be at least " f"30 seconds"
+            )
+
+        return errors
 
     def _initialize_providers(self) -> None:
         """Initialize all configured providers."""
@@ -832,15 +1253,23 @@ class LLMService:
                     "enabled": provider.config.enabled,
                     "healthy": self._provider_health.get(name, False),
                     "models": provider.get_available_models(),
-                    "last_health_check": self._last_health_check,
+                    "last_health_check": self._provider_last_health_check.get(
+                        name, 0.0
+                    ),
+                    "health_check_interval": provider.config.health_check_interval,
                 }
         return status
 
     async def health_check(self) -> Dict[str, bool]:
         """Run health check on all providers."""
+        current_time = time.time()
         health_results = await self.registry.health_check_all()
         self._provider_health = health_results
-        self._last_health_check = time.time()
+
+        # Update last check time for all providers
+        for provider_name in health_results.keys():
+            self._provider_last_health_check[provider_name] = current_time
+
         return health_results
 
     def _select_provider(self, model: str) -> Optional[BaseLLMProvider]:
@@ -897,10 +1326,26 @@ class LLMService:
         raise last_error or LLMError("All providers failed")
 
     async def _ensure_health_check(self) -> None:
-        """Ensure health check is up to date."""
+        """Ensure health checks are up to date for all providers."""
         current_time = time.time()
-        if current_time - self._last_health_check > self.config.health_check_interval:
-            await self.health_check()
+
+        for name, provider in self.registry.providers.items():
+            if not provider.config.enabled:
+                continue
+
+            last_check = self._provider_last_health_check.get(name, 0.0)
+            interval = provider.config.health_check_interval
+
+            if current_time - last_check > interval:
+                try:
+                    health = await provider.health_check()
+                    self._provider_health[name] = health
+                    self._provider_last_health_check[name] = current_time
+                    self.logger.debug(f"Health check for {name}: {health}")
+                except Exception as e:
+                    self.logger.error(f"Health check failed for {name}: {e}")
+                    self._provider_health[name] = False
+                    self._provider_last_health_check[name] = current_time
 
 
 # Factory functions for easy service creation
@@ -951,7 +1396,7 @@ def create_default_llm_service() -> LLMService:
 
 
 class OpenAICompatibleClient:
-    """OpenAI-compatible client that routes all calls through the centralized LLM service.
+    """OpenAI-compatible client routing calls through centralized LLM service.
 
     This allows any framework or library that expects OpenAI API to work seamlessly
     with our centralized LLM service, including local models and other providers.
@@ -1012,11 +1457,9 @@ class OpenAICompatibleClient:
                         OpenAIChoice(
                             index=0,
                             delta=OpenAIDelta(content=chunk.content),
-                            finish_reason=(
-                                chunk.finish_reason
-                                if chunk.finish_reason != "continue"
-                                else None
-                            ),
+                            finish_reason=chunk.finish_reason
+                            if chunk.finish_reason != "continue"
+                            else None,
                         )
                     ],
                 )
