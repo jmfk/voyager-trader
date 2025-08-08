@@ -36,6 +36,7 @@ wheels/
 .installed.cfg
 *.egg
 MANIFEST
+cache
 
 # Testing
 .pytest_cache/
