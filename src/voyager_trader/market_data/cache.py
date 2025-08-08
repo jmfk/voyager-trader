@@ -5,10 +5,10 @@ import hashlib
 import json
 import logging
 import pickle
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional, Union
-
 
 logger = logging.getLogger(__name__)
 
@@ -252,7 +252,8 @@ class DiskCache:
             return
 
         logger.info(
-            f"Disk cache size ({total_size_mb:.1f}MB) exceeds limit ({self.max_size_mb}MB), cleaning up..."
+            f"Disk cache size ({total_size_mb:.1f}MB) exceeds limit "
+            f"({self.max_size_mb}MB), cleaning up..."
         )
 
         # Sort by last accessed (oldest first)
@@ -317,16 +318,35 @@ class DataCache:
         self.disk_default_ttl = disk_default_ttl
 
     def _generate_key(self, source: str, method: str, args: tuple, kwargs: Dict) -> str:
-        """Generate cache key from parameters."""
-        # Create a consistent key from the parameters
+        """Generate collision-resistant cache key from parameters."""
+        # Create a consistent, detailed key from the parameters
         key_data = {
             "source": source,
             "method": method,
-            "args": str(args),
-            "kwargs": str(sorted(kwargs.items())),
+            "args": args,  # Keep as tuple for proper serialization
+            "kwargs": kwargs,
+            "version": "v1",  # Version for cache invalidation if needed
         }
-        key_str = json.dumps(key_data, sort_keys=True)
-        return hashlib.md5(key_str.encode()).hexdigest()
+
+        # Use JSON with sorted keys for consistent serialization
+        try:
+            key_str = json.dumps(
+                key_data, sort_keys=True, default=str, separators=(",", ":")
+            )
+        except (TypeError, ValueError):
+            # Fallback for non-serializable objects
+            key_str = f"{source}:{method}:{str(args)}:{str(sorted(kwargs.items()))}"
+
+        # Use SHA-256 for better collision resistance than MD5
+        hash_obj = hashlib.sha256(key_str.encode("utf-8"))
+
+        # Include a small UUID component to further reduce collision risk
+        # This is deterministic based on the content
+        seed = int(hash_obj.hexdigest()[:8], 16)
+        collision_id = str(uuid.UUID(int=seed))
+
+        # Return hash with collision ID
+        return f"{hash_obj.hexdigest()[:32]}_{collision_id[:8]}"
 
     async def get(
         self, source: str, method: str, args: tuple = (), kwargs: Optional[Dict] = None

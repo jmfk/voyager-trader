@@ -7,15 +7,11 @@ from typing import Any, Dict, List, Optional
 
 from ..models.market import OHLCV, OrderBook, TickData
 
-Symbol = str  # Use string symbols for market data
-
-
 logger = logging.getLogger(__name__)
 
 
 class DataValidationError(Exception):
     """Exception raised for data validation failures."""
-
 
 
 class DataValidator:

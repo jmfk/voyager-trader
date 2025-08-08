@@ -8,19 +8,10 @@ from typing import AsyncGenerator, Dict, List, Optional
 import yfinance as yf
 
 from ...models.market import OHLCV, OrderBook, TickData
-from ...models.types import AssetClass
-from ...models.types import Symbol as SymbolModel
 from ...models.types import TimeFrame
-
-
-def create_symbol(code: str) -> SymbolModel:
-    """Create a Symbol object from a string code."""
-    return SymbolModel(code=code, asset_class=AssetClass.EQUITY)
-
-
-Symbol = str  # Use string symbols for market data
 from ..interfaces import DataSource
 from ..normalizer import DataNormalizer
+from ..types import Symbol, create_symbol
 
 logger = logging.getLogger(__name__)
 
