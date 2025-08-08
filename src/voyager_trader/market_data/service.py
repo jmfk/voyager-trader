@@ -2,17 +2,18 @@
 
 import asyncio
 import logging
+import time
 from datetime import datetime
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
 from ..models.market import OHLCV, OrderBook, TickData
 from ..models.types import TimeFrame
-
-Symbol = str  # Use string symbols for market data
 from .cache import DataCache
 from .manager import DataSourceManager
+from .monitoring import get_metrics_collector, record_request_metrics
 from .normalizer import DataNormalizer
 from .rate_limiter import RateLimiter
+from .types import Symbol
 from .validator import DataValidator
 
 logger = logging.getLogger(__name__)
@@ -98,6 +99,9 @@ class MarketDataService:
         Returns:
             List of validated OHLCV bars
         """
+        start_time = time.time()
+        cache_hit = False
+
         # Check cache first (unless force refresh)
         if self.enable_caching and not force_refresh:
             cached_data = await self.cache.get(
@@ -106,6 +110,17 @@ class MarketDataService:
                 args=(symbol, timeframe, start_date, end_date, limit),
             )
             if cached_data:
+                cache_hit = True
+                duration_ms = (time.time() - start_time) * 1000
+                record_request_metrics(
+                    provider="cache",
+                    method="get_historical_ohlcv",
+                    symbol=symbol,
+                    duration_ms=duration_ms,
+                    success=True,
+                    cache_hit=True,
+                    data_size_bytes=len(str(cached_data).encode()),
+                )
                 logger.debug(
                     f"Retrieved {len(cached_data)} OHLCV bars from cache for {symbol}"
                 )
@@ -417,9 +432,9 @@ class MarketDataService:
             "components": self.source_manager.get_stats(),
         }
 
-        # Add cache stats
+        # Add cache stats placeholder (would need async context to call get_stats)
         if self.cache:
-            stats["components"]["cache"] = asyncio.create_task(self.cache.get_stats())
+            stats["components"]["cache"] = {"async_stats_available": True}
 
         # Add validator stats
         if self.validator:

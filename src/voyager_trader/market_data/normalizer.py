@@ -6,16 +6,8 @@ from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
 from ..models.market import OHLCV, OrderBook, OrderBookLevel, TickData
-from ..models.types import AssetClass
-from ..models.types import Symbol
-from ..models.types import Symbol as SymbolModel
 from ..models.types import TimeFrame
-
-
-def create_symbol(code: str) -> SymbolModel:
-    """Create a Symbol object from a string code."""
-    return SymbolModel(code=code, asset_class=AssetClass.EQUITY)
-
+from .types import Symbol, create_symbol
 
 logger = logging.getLogger(__name__)
 

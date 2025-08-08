@@ -74,7 +74,7 @@ async def test_get_historical_ohlcv(market_data_service):
     assert len(data) > 0
 
     bar = data[0]
-    assert bar.symbol == symbol
+    assert bar.symbol.code == symbol
     assert bar.timeframe == timeframe
     assert start_date <= bar.timestamp <= end_date
 
@@ -135,7 +135,7 @@ async def test_get_latest_ohlcv(market_data_service):
     bar = await market_data_service.get_latest_ohlcv(symbol, timeframe)
 
     assert bar is not None
-    assert bar.symbol == symbol
+    assert bar.symbol.code == symbol
     assert bar.timeframe == timeframe
     assert bar.low <= bar.open <= bar.high
     assert bar.low <= bar.close <= bar.high
@@ -150,7 +150,7 @@ async def test_get_order_book(market_data_service):
     order_book = await market_data_service.get_order_book(symbol, depth)
 
     assert order_book is not None
-    assert order_book.symbol == symbol
+    assert order_book.symbol.code == symbol
     assert len(order_book.bids) == depth
     assert len(order_book.asks) == depth
     assert order_book.spread is not None
@@ -163,7 +163,7 @@ async def test_stream_tick_data(market_data_service):
 
     tick_count = 0
     async for tick in market_data_service.stream_tick_data(symbol):
-        assert tick.symbol == symbol
+        assert tick.symbol.code == symbol
         assert tick.price > 0
         assert tick.size > 0
 

@@ -7,8 +7,8 @@ from typing import AsyncGenerator, Dict, List, Optional
 from ..models.market import OHLCV, OrderBook, TickData
 from ..models.types import TimeFrame
 
-# For market data, we use string symbols for simplicity
-Symbol = str
+# Import centralized Symbol type
+from .types import Symbol
 
 
 class DataSource(ABC):
