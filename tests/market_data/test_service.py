@@ -1,13 +1,10 @@
 """Tests for MarketDataService."""
 
-import asyncio
 from datetime import datetime, timedelta
-from unittest.mock import AsyncMock, Mock
 
 import pytest
 
 from src.voyager_trader.market_data.service import MarketDataService
-from src.voyager_trader.market_data.sources.mock import MockDataSource
 from src.voyager_trader.models.types import TimeFrame
 
 

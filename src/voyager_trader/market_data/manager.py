@@ -2,7 +2,6 @@
 
 import asyncio
 import logging
-from datetime import datetime
 from typing import Any, Dict, List, Optional, Type
 
 from .fetcher import AsyncDataFetcher, HealthMonitor

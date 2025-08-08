@@ -1,6 +1,5 @@
 """Tests for MockDataSource."""
 
-import asyncio
 from datetime import datetime, timedelta
 from decimal import Decimal
 

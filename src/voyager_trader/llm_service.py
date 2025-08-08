@@ -145,22 +145,18 @@ class BaseLLMProvider(ABC):
     @abstractmethod
     async def generate(self, request: LLMRequest) -> LLMResponse:
         """Generate response from LLM."""
-        pass
 
     @abstractmethod
     async def stream_generate(self, request: LLMRequest) -> AsyncIterator[LLMResponse]:
         """Generate streaming response from LLM."""
-        pass
 
     @abstractmethod
     def get_available_models(self) -> List[str]:
         """Get list of available models for this provider."""
-        pass
 
     @abstractmethod
     async def health_check(self) -> bool:
         """Check if provider is healthy."""
-        pass
 
     async def _enforce_rate_limits(self, estimated_tokens: int = 0) -> None:
         """Enforce rate limits for the provider.
@@ -575,9 +571,9 @@ class OllamaProvider(BaseLLMProvider):
                                     content=chunk["response"],
                                     model=request.model,
                                     provider=self.config.name,
-                                    finish_reason="stop"
-                                    if chunk.get("done")
-                                    else "continue",
+                                    finish_reason=(
+                                        "stop" if chunk.get("done") else "continue"
+                                    ),
                                 )
                         except json.JSONDecodeError:
                             continue
@@ -1457,9 +1453,11 @@ class OpenAICompatibleClient:
                         OpenAIChoice(
                             index=0,
                             delta=OpenAIDelta(content=chunk.content),
-                            finish_reason=chunk.finish_reason
-                            if chunk.finish_reason != "continue"
-                            else None,
+                            finish_reason=(
+                                chunk.finish_reason
+                                if chunk.finish_reason != "continue"
+                                else None
+                            ),
                         )
                     ],
                 )
