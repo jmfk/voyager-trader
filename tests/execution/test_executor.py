@@ -15,6 +15,8 @@ from src.voyager_trader.execution.risk import RiskLimits, RiskManager
 from src.voyager_trader.models.trading import Portfolio
 from src.voyager_trader.models.types import Money, OrderType, Symbol
 
+# Mock imports available for future use
+
 
 @pytest.fixture
 def sample_portfolio():
@@ -485,7 +487,8 @@ class TestStrategyExecutor:
 
         assert result.success
         assert result.filled_quantity.amount > 0
-        # Should be limited by strategy allocation (10% of $100k = $10k / $100 = 100 shares max)
+        # Should be limited by strategy allocation
+        # (10% of $100k = $10k / $100 = 100 shares max)
         assert result.filled_quantity.amount <= Decimal("100")
 
 
@@ -584,7 +587,8 @@ class TestExecutorIntegration:
         )
 
         result = await strategy_executor.execute_signal(final_signal)
-        # May succeed or fail depending on exact limits, but system should handle it gracefully
+        # May succeed or fail depending on exact limits,
+        # but system should handle it gracefully
         assert isinstance(result.success, bool)
 
         await strategy_executor.stop()
