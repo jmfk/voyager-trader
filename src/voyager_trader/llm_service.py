@@ -14,6 +14,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -137,7 +138,9 @@ class BaseLLMProvider(ABC):
         self._last_health_check = 0.0
         self._is_healthy = True
         self._request_count = 0
+        self._token_count = 0
         self._last_request_time = time.time()
+        self._token_window_start = time.time()
 
     @abstractmethod
     async def generate(self, request: LLMRequest) -> LLMResponse:
@@ -159,14 +162,19 @@ class BaseLLMProvider(ABC):
         """Check if provider is healthy."""
         pass
 
-    async def _enforce_rate_limits(self) -> None:
-        """Enforce rate limits for the provider."""
+    async def _enforce_rate_limits(self, estimated_tokens: int = 0) -> None:
+        """Enforce rate limits for the provider.
+
+        Args:
+            estimated_tokens: Estimated tokens for request (for token-based limiting)
+        """
         if not self.config.rate_limits:
             return
 
         current_time = time.time()
         time_window = 60.0  # 1 minute
 
+        # Check requests per minute limit
         requests_per_minute = self.config.rate_limits.get("requests_per_minute", 0)
         if requests_per_minute > 0:
             time_since_last = current_time - self._last_request_time
@@ -175,12 +183,58 @@ class BaseLLMProvider(ABC):
                 and time_since_last < time_window
             ):
                 wait_time = time_window - time_since_last
-                self.logger.info(f"Rate limit reached, waiting {wait_time:.2f} seconds")
+                self.logger.info(
+                    f"Request rate limit reached ({requests_per_minute}/min), "
+                    f"waiting {wait_time:.2f} seconds"
+                )
                 await asyncio.sleep(wait_time)
                 self._request_count = 0
+                self._last_request_time = current_time
+
+        # Check tokens per minute limit
+        tokens_per_minute = self.config.rate_limits.get("tokens_per_minute", 0)
+        if tokens_per_minute > 0 and estimated_tokens > 0:
+            time_since_window_start = current_time - self._token_window_start
+
+            # Reset token count if window has passed
+            if time_since_window_start >= time_window:
+                self._token_count = 0
+                self._token_window_start = current_time
+                time_since_window_start = 0
+
+            # Check if adding this request would exceed token limit
+            if self._token_count + estimated_tokens > tokens_per_minute:
+                wait_time = time_window - time_since_window_start
+                self.logger.info(
+                    f"Token rate limit reached ({tokens_per_minute}/min), "
+                    f"waiting {wait_time:.2f} seconds"
+                )
+                await asyncio.sleep(wait_time)
+                self._token_count = 0
+                self._token_window_start = current_time
 
         self._request_count += 1
+        self._token_count += estimated_tokens
         self._last_request_time = current_time
+
+    def _estimate_tokens(self, request: LLMRequest) -> int:
+        """Estimate token count for rate limiting.
+
+        Simple estimation: 4 characters = 1 token (rough approximation).
+        More accurate implementations could use tokenizer libraries.
+        """
+        total_chars = 0
+        for message in request.messages:
+            content = message.get("content", "")
+            total_chars += len(content)
+
+        # Add estimated response tokens (max_tokens or a reasonable default)
+        response_tokens = min(request.max_tokens, 500)  # Conservative estimate
+
+        # 4 chars per token is a rough approximation
+        estimated_tokens = (total_chars // 4) + response_tokens
+
+        return max(estimated_tokens, 10)  # Minimum 10 tokens per request
 
     def _validate_request(self, request: LLMRequest) -> None:
         """Validate request parameters."""
@@ -237,10 +291,39 @@ class OpenAIProvider(BaseLLMProvider):
                 "gpt-4o",
             ]
 
+    async def __aenter__(self):
+        """Async context manager entry."""
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit with cleanup."""
+        await self.close()
+
+    async def close(self):
+        """Close OpenAI client connections."""
+        if hasattr(self.client, "close"):
+            try:
+                await self.client.close()
+            except Exception as e:
+                self.logger.error(f"Error closing OpenAI client: {e}")
+
+    def __del__(self):
+        """Cleanup on deletion."""
+        if hasattr(self, "client") and self.client:
+            import warnings
+
+            warnings.warn(
+                "OpenAIProvider client was not properly closed. "
+                "Use async context manager or call close() explicitly.",
+                ResourceWarning,
+                stacklevel=2,
+            )
+
     async def generate(self, request: LLMRequest) -> LLMResponse:
         """Generate response from OpenAI."""
         self._validate_request(request)
-        await self._enforce_rate_limits()
+        estimated_tokens = self._estimate_tokens(request)
+        await self._enforce_rate_limits(estimated_tokens)
 
         try:
             response = await self._retry_on_failure(
@@ -282,7 +365,8 @@ class OpenAIProvider(BaseLLMProvider):
     async def stream_generate(self, request: LLMRequest) -> AsyncIterator[LLMResponse]:
         """Generate streaming response from OpenAI."""
         self._validate_request(request)
-        await self._enforce_rate_limits()
+        estimated_tokens = self._estimate_tokens(request)
+        await self._enforce_rate_limits(estimated_tokens)
 
         try:
             stream = await self._retry_on_failure(
@@ -393,7 +477,8 @@ class OllamaProvider(BaseLLMProvider):
     async def generate(self, request: LLMRequest) -> LLMResponse:
         """Generate response from Ollama."""
         self._validate_request(request)
-        await self._enforce_rate_limits()
+        estimated_tokens = self._estimate_tokens(request)
+        await self._enforce_rate_limits(estimated_tokens)
 
         session = await self._get_session()
 
@@ -451,7 +536,8 @@ class OllamaProvider(BaseLLMProvider):
     async def stream_generate(self, request: LLMRequest) -> AsyncIterator[LLMResponse]:
         """Generate streaming response from Ollama."""
         self._validate_request(request)
-        await self._enforce_rate_limits()
+        estimated_tokens = self._estimate_tokens(request)
+        await self._enforce_rate_limits(estimated_tokens)
 
         session = await self._get_session()
 
@@ -503,13 +589,66 @@ class OllamaProvider(BaseLLMProvider):
                 model=request.model,
             )
 
+    def _sanitize_content(self, content: str) -> str:
+        """Sanitize message content to prevent prompt injection attacks.
+
+        Args:
+            content: Raw message content
+
+        Returns:
+            Sanitized content safe for use in prompts
+        """
+        if not content:
+            return ""
+
+        # Remove potential prompt injection patterns
+        sanitized = content
+
+        # Remove role indicators that could confuse the model
+        role_patterns = [
+            "System:",
+            "User:",
+            "Assistant:",
+            "Human:",
+            "AI:",
+            "Bot:",
+        ]
+
+        for pattern in role_patterns:
+            # Case-insensitive replacement, but preserve the original text structure
+            sanitized = re.sub(
+                re.escape(pattern),
+                pattern.replace(":", ""),
+                sanitized,
+                flags=re.IGNORECASE,
+            )
+
+        # Remove excessive newlines that could break prompt structure
+        sanitized = re.sub(r"\n{3,}", "\n\n", sanitized)
+
+        # Trim whitespace
+        sanitized = sanitized.strip()
+
+        # Limit content length to prevent extremely long prompts
+        max_length = 8000  # Reasonable limit for single message
+        if len(sanitized) > max_length:
+            sanitized = sanitized[:max_length] + "...[truncated]"
+
+        return sanitized
+
     def _convert_messages_to_prompt(self, messages: List[Dict[str, str]]) -> str:
-        """Convert OpenAI-style messages to Ollama prompt format."""
+        """Convert OpenAI-style messages to Ollama format with sanitization."""
         prompt_parts = []
 
         for message in messages:
             role = message.get("role", "user")
-            content = message.get("content", "")
+            raw_content = message.get("content", "")
+
+            # Sanitize content to prevent prompt injection
+            content = self._sanitize_content(raw_content)
+
+            if not content:  # Skip empty messages
+                continue
 
             if role == "system":
                 prompt_parts.append(f"System: {content}")
@@ -517,6 +656,13 @@ class OllamaProvider(BaseLLMProvider):
                 prompt_parts.append(f"User: {content}")
             elif role == "assistant":
                 prompt_parts.append(f"Assistant: {content}")
+            else:
+                # For unknown roles, default to user but log a warning
+                self.logger.warning(f"Unknown message role '{role}', treating as user")
+                prompt_parts.append(f"User: {content}")
+
+        if not prompt_parts:  # If all messages were empty/invalid
+            prompt_parts.append("User: Hello")  # Safe default
 
         return "\n\n".join(prompt_parts) + "\n\nAssistant:"
 
@@ -558,10 +704,39 @@ class AnthropicProvider(BaseLLMProvider):
                 "claude-3-5-sonnet-20241022",
             ]
 
+    async def __aenter__(self):
+        """Async context manager entry."""
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit with cleanup."""
+        await self.close()
+
+    async def close(self):
+        """Close Anthropic client connections."""
+        if hasattr(self.client, "close"):
+            try:
+                await self.client.close()
+            except Exception as e:
+                self.logger.error(f"Error closing Anthropic client: {e}")
+
+    def __del__(self):
+        """Cleanup on deletion."""
+        if hasattr(self, "client") and self.client:
+            import warnings
+
+            warnings.warn(
+                "AnthropicProvider client was not properly closed. "
+                "Use async context manager or call close() explicitly.",
+                ResourceWarning,
+                stacklevel=2,
+            )
+
     async def generate(self, request: LLMRequest) -> LLMResponse:
         """Generate response from Anthropic."""
         self._validate_request(request)
-        await self._enforce_rate_limits()
+        estimated_tokens = self._estimate_tokens(request)
+        await self._enforce_rate_limits(estimated_tokens)
 
         # Convert messages format for Anthropic
         system_prompt = None
@@ -616,7 +791,8 @@ class AnthropicProvider(BaseLLMProvider):
     async def stream_generate(self, request: LLMRequest) -> AsyncIterator[LLMResponse]:
         """Generate streaming response from Anthropic."""
         self._validate_request(request)
-        await self._enforce_rate_limits()
+        estimated_tokens = self._estimate_tokens(request)
+        await self._enforce_rate_limits(estimated_tokens)
 
         # Convert messages format for Anthropic
         system_prompt = None

@@ -36,6 +36,7 @@ except ImportError:
 from .curriculum import AutomaticCurriculum
 from .llm_service import (
     LLMError,
+    LLMProvider,
     LLMRequest,
     LLMResponse,
     ProviderError,
@@ -65,14 +66,6 @@ class SafetyValidationError(PromptingError):
 
 class PerformanceEvaluationError(PromptingError):
     """Exception raised during performance evaluation."""
-
-
-class LLMProvider(str, Enum):
-    """Available LLM providers (deprecated - use llm_service.LLMProvider)."""
-
-    OPENAI = "openai"
-    ANTHROPIC = "anthropic"
-    OLLAMA = "ollama"
 
 
 class ExecutionStatus(str, Enum):

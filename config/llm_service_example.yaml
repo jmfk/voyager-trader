@@ -30,10 +30,10 @@ llm_service:
         - gpt-4-turbo
         - gpt-4-turbo-preview
 
-      # Rate limiting (optional)
+      # Rate limiting (optional) - standardized units across all providers
       rate_limits:
-        requests_per_minute: 60
-        tokens_per_minute: 40000
+        requests_per_minute: 60      # Max API requests per minute
+        tokens_per_minute: 40000     # Max tokens per minute (input + estimated output)
 
       # Provider-specific settings
       timeout: 60

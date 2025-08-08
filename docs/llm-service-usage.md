@@ -311,12 +311,75 @@ except LLMError as e:
     print(f"General LLM error: {e}")
 ```
 
+### Rate Limiting
+
+The service supports standardized rate limiting across all providers:
+
+```yaml
+providers:
+  openai:
+    rate_limits:
+      requests_per_minute: 60      # Maximum API requests per minute
+      tokens_per_minute: 40000     # Maximum tokens per minute (input + estimated output)
+```
+
+**Rate Limiting Features:**
+- **Request-based limiting**: Controls number of API calls per minute
+- **Token-based limiting**: Controls token usage including input and estimated output
+- **Per-provider configuration**: Each provider can have different limits
+- **Automatic enforcement**: Service automatically waits when limits are reached
+- **Token estimation**: Uses 4 characters ≈ 1 token approximation for rate limiting
+
+### Security Features
+
+The LLM service includes built-in security measures:
+
+**Input Sanitization (Ollama Provider):**
+- Removes role indicators that could confuse the model (`System:`, `User:`, etc.)
+- Limits message length to prevent extremely long prompts (8000 chars max)
+- Normalizes excessive newlines that could break prompt structure
+- Provides safe defaults for empty or invalid messages
+- Logs warnings for unknown message roles
+
+This prevents prompt injection attacks where malicious input tries to manipulate the model by including fake role indicators or system instructions.
+
+### Session Lifecycle Management
+
+All providers support proper session lifecycle management with async context managers:
+
+```python
+from src.voyager_trader.llm_service import LLMService, create_default_llm_service
+
+# Recommended: Use async context manager for automatic cleanup
+async with create_default_llm_service() as service:
+    response = await service.generate(LLMRequest(
+        messages=[{"role": "user", "content": "Hello"}],
+        model="gpt-3.5-turbo"
+    ))
+    print(response.content)
+# Service and all provider sessions are automatically closed
+
+# Alternative: Manual lifecycle management
+service = create_default_llm_service()
+try:
+    response = await service.generate(request)
+finally:
+    await service.close()  # Ensure proper cleanup
+```
+
+**Session Management Features:**
+- Automatic connection pooling and reuse
+- Graceful session cleanup with `__aexit__` and `close()` methods
+- Resource leak detection with `__del__` warnings
+- Per-provider session isolation
+
 ## Best Practices
 
 1. **Use Environment Variables**: Store API keys securely in environment variables
 2. **Configure Fallbacks**: Set up fallback chains for reliability
 3. **Local Models for Development**: Use Ollama for development and testing
 4. **Monitor Usage**: Regularly check provider status and health
+5. **Set Appropriate Rate Limits**: Configure limits based on your API plan and usage patterns
 5. **Handle Errors**: Implement proper error handling and retry logic
 6. **Rate Limiting**: Respect provider rate limits and quotas
 7. **Cost Optimization**: Use local models when possible to reduce API costs
