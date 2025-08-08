@@ -250,11 +250,9 @@ class LLMIntegrationLayer:
                 model=self.config.llm_model,
                 temperature=self.config.temperature,
                 max_tokens=self.config.max_tokens,
-                provider=(
-                    self.config.llm_provider.value
-                    if isinstance(self.config.llm_provider, LLMProvider)
-                    else self.config.llm_provider
-                ),
+                provider=self.config.llm_provider.value
+                if isinstance(self.config.llm_provider, LLMProvider)
+                else self.config.llm_provider,
             )
 
             # Generate response

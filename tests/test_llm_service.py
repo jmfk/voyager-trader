@@ -2,18 +2,21 @@
 
 import asyncio
 import json
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
+from aiohttp import ClientResponse, ClientSession
 
 from src.voyager_trader.llm_service import (
     AnthropicProvider,
+    LLMError,
     LLMRequest,
     LLMResponse,
     LLMService,
     LLMServiceConfig,
     ModelNotAvailableError,
     OllamaProvider,
+    OpenAICompatibleClient,
     OpenAIProvider,
     ProviderConfig,
     ProviderError,
@@ -847,7 +850,7 @@ class TestStreamingScenarios:
         assert responses[0].content == "Hello"
         assert responses[1].content == " world"
         assert responses[2].content == "!"
-        assert responses[2].finished is True
+        assert responses[2].finish_reason == "stop"
 
 
 @pytest.mark.asyncio
