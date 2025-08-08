@@ -373,6 +373,40 @@ finally:
 - Resource leak detection with `__del__` warnings
 - Per-provider session isolation
 
+### Configuration Validation
+
+The service validates all configuration on startup to catch errors early:
+
+```python
+from src.voyager_trader.llm_service import create_llm_service_from_config, LLMError
+
+config = {
+    "default_provider": "openai",
+    "providers": {
+        "openai": {
+            "enabled": True,
+            "timeout": -5,  # Invalid: negative timeout
+            "api_key": "sk-..."
+        }
+    }
+}
+
+try:
+    service = create_llm_service_from_config(config)
+except LLMError as e:
+    print(f"Configuration error: {e}")
+    # Fix the configuration and retry
+```
+
+**Validation Checks:**
+- Provider existence and enablement
+- API key availability (config or environment)
+- Timeout and retry limits within reasonable bounds
+- Valid URL formats for base_url settings
+- Rate limiting configuration correctness
+- Provider-specific requirements (e.g., Ollama timeout minimums)
+- Fallback chain provider availability
+
 ## Best Practices
 
 1. **Use Environment Variables**: Store API keys securely in environment variables

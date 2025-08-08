@@ -938,6 +938,10 @@ class LLMService:
         self.config = config
         self.registry = ProviderRegistry()
         self.logger = logging.getLogger(__name__)
+
+        # Validate configuration before initializing providers
+        self._validate_service_config()
+
         self._initialize_providers()
         self._provider_health: Dict[str, bool] = {}
         self._provider_last_health_check: Dict[str, float] = {}
@@ -972,6 +976,183 @@ class LLMService:
                 ResourceWarning,
                 stacklevel=2,
             )
+
+    def _validate_service_config(self) -> None:
+        """Validate service configuration and provider settings."""
+        errors = []
+        warnings = []
+
+        # Validate basic service config
+        if not self.config.default_provider:
+            errors.append("default_provider cannot be empty")
+
+        if not self.config.providers:
+            errors.append("At least one provider must be configured")
+
+        # Check if default provider exists in configured providers
+        if (
+            self.config.default_provider
+            and self.config.default_provider not in self.config.providers
+        ):
+            errors.append(
+                f"default_provider '{self.config.default_provider}' "
+                f"not found in configured providers"
+            )
+
+        # Validate fallback chain
+        for provider_name in self.config.fallback_chain:
+            if provider_name not in self.config.providers:
+                warnings.append(f"Fallback provider '{provider_name}' not configured")
+
+        # Validate each provider configuration
+        enabled_providers = []
+        for name, provider_config in self.config.providers.items():
+            provider_errors = self._validate_provider_config(name, provider_config)
+            errors.extend(provider_errors)
+
+            if provider_config.enabled:
+                enabled_providers.append(name)
+
+        # Check if at least one provider is enabled
+        if not enabled_providers:
+            errors.append("At least one provider must be enabled")
+
+        # Check if default provider is enabled
+        if (
+            self.config.default_provider in self.config.providers
+            and not self.config.providers[self.config.default_provider].enabled
+        ):
+            warnings.append(
+                f"Default provider '{self.config.default_provider}' is disabled"
+            )
+
+        # Log warnings
+        for warning in warnings:
+            self.logger.warning(f"Configuration warning: {warning}")
+
+        # Raise exception for errors
+        if errors:
+            error_msg = "Configuration validation failed:\n" + "\n".join(
+                f"  - {error}" for error in errors
+            )
+            raise LLMError(error_msg)
+
+        self.logger.info(
+            f"Configuration validated successfully. "
+            f"Enabled providers: {', '.join(enabled_providers)}"
+        )
+
+    def _validate_provider_config(self, name: str, config: ProviderConfig) -> List[str]:
+        """Validate individual provider configuration.
+
+        Returns:
+            List of validation error messages
+        """
+        errors = []
+
+        # Validate provider name matches config
+        if config.name != name:
+            errors.append(
+                f"Provider '{name}' config has mismatched name '{config.name}'"
+            )
+
+        # Validate timeout values
+        if config.timeout <= 0:
+            errors.append(f"Provider '{name}' timeout must be positive")
+        elif config.timeout > 600:
+            errors.append(f"Provider '{name}' timeout too high (max 600 seconds)")
+
+        # Validate retry settings
+        if config.max_retries < 0:
+            errors.append(f"Provider '{name}' max_retries must be non-negative")
+        elif config.max_retries > 10:
+            errors.append(f"Provider '{name}' max_retries too high (max 10)")
+
+        if config.retry_delay <= 0:
+            errors.append(f"Provider '{name}' retry_delay must be positive")
+
+        # Validate health check interval
+        if config.health_check_interval <= 0:
+            errors.append(f"Provider '{name}' health_check_interval must be positive")
+        elif config.health_check_interval > 3600:
+            errors.append(
+                f"Provider '{name}' health_check_interval too high (max 1 hour)"
+            )
+
+        # Validate rate limits
+        if config.rate_limits:
+            for limit_type, limit_value in config.rate_limits.items():
+                if limit_type not in ["requests_per_minute", "tokens_per_minute"]:
+                    errors.append(
+                        f"Provider '{name}' unknown rate limit type '{limit_type}'"
+                    )
+                elif limit_value <= 0:
+                    errors.append(
+                        f"Provider '{name}' rate limit '{limit_type}' must be positive"
+                    )
+
+        # Provider-specific validation
+        if config.name == "openai":
+            errors.extend(self._validate_openai_config(name, config))
+        elif config.name == "anthropic":
+            errors.extend(self._validate_anthropic_config(name, config))
+        elif config.name == "ollama":
+            errors.extend(self._validate_ollama_config(name, config))
+
+        return errors
+
+    def _validate_openai_config(self, name: str, config: ProviderConfig) -> List[str]:
+        """Validate OpenAI-specific configuration."""
+        errors = []
+
+        # Check API key (allow environment variables)
+        if not config.api_key and not os.getenv("OPENAI_API_KEY"):
+            errors.append(
+                f"OpenAI provider '{name}' requires api_key or OPENAI_API_KEY env var"
+            )
+
+        # Validate base_url if provided
+        if config.base_url and not config.base_url.startswith(("http://", "https://")):
+            errors.append(
+                f"OpenAI provider '{name}' base_url must be a valid HTTP(S) URL"
+            )
+
+        return errors
+
+    def _validate_anthropic_config(
+        self, name: str, config: ProviderConfig
+    ) -> List[str]:
+        """Validate Anthropic-specific configuration."""
+        errors = []
+
+        # Check API key (allow environment variables)
+        if not config.api_key and not os.getenv("ANTHROPIC_API_KEY"):
+            errors.append(
+                f"Anthropic provider '{name}' requires api_key or "
+                f"ANTHROPIC_API_KEY env var"
+            )
+
+        return errors
+
+    def _validate_ollama_config(self, name: str, config: ProviderConfig) -> List[str]:
+        """Validate Ollama-specific configuration."""
+        errors = []
+
+        # Validate base_url
+        if config.base_url and not config.base_url.startswith(("http://", "https://")):
+            errors.append(
+                f"Ollama provider '{name}' base_url must be a valid " f"HTTP(S) URL"
+            )
+
+        # Ollama typically has longer timeouts, warn if too short
+        if config.timeout < 30:
+            # This is a warning, but we'll add it as an error since Ollama
+            # needs time
+            errors.append(
+                f"Ollama provider '{name}' timeout should be at least " f"30 seconds"
+            )
+
+        return errors
 
     def _initialize_providers(self) -> None:
         """Initialize all configured providers."""
