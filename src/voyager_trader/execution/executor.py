@@ -544,11 +544,7 @@ class StrategyExecutor:
             "system_health": self.monitor.get_system_health(),
             "risk_metrics": self.risk_manager.get_risk_metrics(
                 self.portfolio_manager.get_current_portfolio(),
-                (
-                    asyncio.run(self.broker.get_account_info())
-                    if asyncio.get_event_loop().is_running()
-                    else None
-                ),
+                None,  # Account info not available in synchronous context
             ),
         }
 
