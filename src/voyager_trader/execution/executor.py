@@ -10,7 +10,7 @@ import logging
 import uuid
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from pydantic import BaseModel, Field
 
@@ -22,6 +22,26 @@ from .monitor import ExecutionMonitor
 from .risk import RiskManager, RiskViolation
 
 logger = logging.getLogger(__name__)
+
+
+class PriceDataConfig(BaseModel):
+    """Configuration for price data handling and fallback mechanisms."""
+
+    max_price_staleness_seconds: int = Field(
+        default=30, description="Maximum age of price data before considered stale"
+    )
+    enable_fallback_pricing: bool = Field(
+        default=True, description="Enable fallback pricing mechanisms"
+    )
+    fallback_price_spread_percent: Decimal = Field(
+        default=Decimal("0.1"), description="Spread to apply for fallback pricing"
+    )
+    price_cache_ttl_seconds: int = Field(
+        default=60, description="Time-to-live for cached price data"
+    )
+    max_price_change_percent: Decimal = Field(
+        default=Decimal("10"), description="Maximum acceptable price change"
+    )
 
 
 class StrategySignal(BaseModel):
@@ -67,6 +87,9 @@ class ExecutionConfig(BaseModel):
     max_strategy_allocation_percent: Decimal = Field(
         default=Decimal("20"), description="Max allocation per strategy"
     )
+    price_data_config: PriceDataConfig = Field(
+        default_factory=PriceDataConfig, description="Price data configuration"
+    )
 
 
 class StrategyExecutor:
@@ -96,6 +119,10 @@ class StrategyExecutor:
         self._strategy_allocations: Dict[str, Decimal] = {}
         self._active_orders: Dict[str, Order] = {}
         self._lock = asyncio.Lock()
+
+        # Price data management
+        self._price_cache: Dict[str, Tuple[Decimal, datetime]] = {}
+        self._price_lock = asyncio.Lock()
 
         # Background tasks
         self._tasks: List[asyncio.Task] = []
@@ -195,7 +222,7 @@ class StrategyExecutor:
             )
             for position in strategy_positions:
                 if position.is_open:
-                    current_price = await self.broker.get_current_price(position.symbol)
+                    current_price = await self._get_robust_price(position.symbol)
                     if current_price:
                         await self.portfolio_manager.close_position(
                             position.symbol.code, current_price
@@ -263,6 +290,166 @@ class StrategyExecutor:
                 error_message=str(e),
             )
 
+    async def _get_robust_price(self, symbol: Symbol) -> Optional[Decimal]:
+        """
+        Get current price with fallback mechanisms and staleness checks.
+
+        Returns:
+            Price if available and not stale, None if no price can be obtained
+        """
+        now = datetime.utcnow()
+        symbol_code = symbol.code
+
+        async with self._price_lock:
+            # Check cache first
+            if symbol_code in self._price_cache:
+                cached_price, timestamp = self._price_cache[symbol_code]
+                cache_age = (now - timestamp).total_seconds()
+
+                # Use cached price if within TTL
+                if cache_age <= self.config.price_data_config.price_cache_ttl_seconds:
+                    return cached_price
+
+                # Check if cached price is stale but can be used as fallback
+                if (
+                    cache_age
+                    > self.config.price_data_config.max_price_staleness_seconds
+                ):
+                    logger.warning(
+                        f"Cached price for {symbol_code} is stale ({cache_age:.1f}s old)"
+                    )
+
+        # Try to get fresh price from broker
+        try:
+            fresh_price = await self.broker.get_current_price(symbol)
+
+            if fresh_price is not None:
+                # Validate price change if we have a cached price
+                if symbol_code in self._price_cache:
+                    cached_price, _ = self._price_cache[symbol_code]
+                    price_change_percent = abs(
+                        (fresh_price - cached_price) / cached_price * 100
+                    )
+
+                    if (
+                        price_change_percent
+                        > self.config.price_data_config.max_price_change_percent
+                    ):
+                        logger.warning(
+                            f"Large price change for {symbol_code}: "
+                            f"{price_change_percent:.1f}% (from {cached_price} to {fresh_price})"
+                        )
+
+                        # Still use the new price but log the anomaly
+                        self.monitor.record_error(
+                            f"Large price change for {symbol_code}: {price_change_percent:.1f}%",
+                            {
+                                "symbol": symbol_code,
+                                "old_price": str(cached_price),
+                                "new_price": str(fresh_price),
+                            },
+                        )
+
+                # Update cache with fresh price
+                async with self._price_lock:
+                    self._price_cache[symbol_code] = (fresh_price, now)
+
+                return fresh_price
+
+        except Exception as e:
+            logger.error(f"Failed to get fresh price for {symbol_code}: {e}")
+            self.monitor.record_error(f"Price fetch failed for {symbol_code}: {str(e)}")
+
+        # Fallback mechanisms
+        if self.config.price_data_config.enable_fallback_pricing:
+            return await self._get_fallback_price(symbol)
+
+        return None
+
+    async def _get_fallback_price(self, symbol: Symbol) -> Optional[Decimal]:
+        """
+        Get fallback price using various mechanisms.
+
+        Returns:
+            Fallback price or None if no fallback available
+        """
+        symbol_code = symbol.code
+
+        # Try cached price even if stale (as last resort)
+        async with self._price_lock:
+            if symbol_code in self._price_cache:
+                cached_price, timestamp = self._price_cache[symbol_code]
+                cache_age = (datetime.utcnow() - timestamp).total_seconds()
+
+                logger.warning(
+                    f"Using stale cached price for {symbol_code} ({cache_age:.1f}s old)"
+                )
+                self.monitor.record_error(
+                    f"Using stale price for {symbol_code}",
+                    {"age_seconds": cache_age, "price": str(cached_price)},
+                )
+
+                return cached_price
+
+        # Try to get price from existing positions
+        positions = self.portfolio_manager.get_all_positions()
+        for position in positions:
+            if position.symbol.code == symbol_code and position.current_price:
+                spread_adjustment = position.current_price * (
+                    self.config.price_data_config.fallback_price_spread_percent / 100
+                )
+                fallback_price = position.current_price + spread_adjustment
+
+                logger.warning(
+                    f"Using position fallback price for {symbol_code}: {fallback_price}"
+                )
+                self.monitor.record_error(
+                    f"Using position-based fallback price for {symbol_code}",
+                    {
+                        "position_price": str(position.current_price),
+                        "fallback_price": str(fallback_price),
+                    },
+                )
+
+                # Cache the fallback price
+                async with self._price_lock:
+                    self._price_cache[symbol_code] = (fallback_price, datetime.utcnow())
+
+                return fallback_price
+
+        # No fallback available
+        logger.error(f"No fallback price available for {symbol_code}")
+        return None
+
+    async def _cleanup_stale_prices(self) -> int:
+        """
+        Remove stale prices from cache to prevent memory buildup.
+
+        Returns:
+            Number of stale prices removed
+        """
+        now = datetime.utcnow()
+        removed_count = 0
+
+        async with self._price_lock:
+            stale_symbols = []
+            for symbol_code, (price, timestamp) in self._price_cache.items():
+                cache_age = (now - timestamp).total_seconds()
+
+                # Remove prices older than max staleness * 2 (to allow some buffer)
+                max_age = self.config.price_data_config.max_price_staleness_seconds * 2
+                if cache_age > max_age:
+                    stale_symbols.append(symbol_code)
+
+            for symbol_code in stale_symbols:
+                del self._price_cache[symbol_code]
+                removed_count += 1
+
+        if removed_count > 0:
+            logger.debug(f"Cleaned up {removed_count} stale price cache entries")
+
+        return removed_count
+
     async def _execute_buy_signal(self, signal: StrategySignal) -> ExecutionResult:
         """Execute buy signal."""
         try:
@@ -283,13 +470,13 @@ class StrategyExecutor:
                     allocation / 100
                 )
 
-                current_price = await self.broker.get_current_price(signal.symbol)
+                current_price = await self._get_robust_price(signal.symbol)
                 if not current_price:
                     return ExecutionResult(
                         success=False,
                         order_id="",
                         filled_quantity=Quantity(amount=Decimal("0")),
-                        error_message=f"No price data for {signal.symbol.code}",
+                        error_message=f"No reliable price data for {signal.symbol.code}",
                     )
 
                 quantity = self.risk_manager.calculate_position_size(
@@ -534,9 +721,32 @@ class StrategyExecutor:
 
         return status
 
+    def get_price_cache_stats(self) -> Dict:
+        """Get price cache statistics for monitoring."""
+        now = datetime.utcnow()
+        stats = {
+            "total_cached_prices": 0,
+            "fresh_prices": 0,
+            "stale_prices": 0,
+            "very_stale_prices": 0,
+        }
+
+        for symbol_code, (price, timestamp) in self._price_cache.items():
+            stats["total_cached_prices"] += 1
+            cache_age = (now - timestamp).total_seconds()
+
+            if cache_age <= self.config.price_data_config.price_cache_ttl_seconds:
+                stats["fresh_prices"] += 1
+            elif cache_age <= self.config.price_data_config.max_price_staleness_seconds:
+                stats["stale_prices"] += 1
+            else:
+                stats["very_stale_prices"] += 1
+
+        return stats
+
     def get_execution_status(self) -> Dict:
         """Get overall execution status."""
-        return {
+        status = {
             "running": self._running,
             "strategies": len(self._strategies),
             "active_orders": len(self._active_orders),
@@ -547,6 +757,11 @@ class StrategyExecutor:
                 None,  # Account info not available in synchronous context
             ),
         }
+
+        # Add price cache statistics
+        status["price_cache_stats"] = self.get_price_cache_stats()
+
+        return status
 
     async def emergency_stop(self, reason: str = "Manual emergency stop") -> None:
         """Emergency stop all trading activity."""
