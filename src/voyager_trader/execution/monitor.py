@@ -19,6 +19,26 @@ from ..models.types import Money, OrderStatus
 logger = logging.getLogger(__name__)
 
 
+class MonitorConfig(BaseModel):
+    """Configuration for execution monitor retention and cleanup."""
+
+    # Retention periods (number of items to keep)
+    max_fill_times: int = Field(default=1000, description="Max fill time records")
+    max_slippage_records: int = Field(default=1000, description="Max slippage records")
+    max_trade_timestamps: int = Field(default=5000, description="Max trade timestamps")
+    max_error_records: int = Field(default=1000, description="Max error records")
+    max_portfolio_snapshots: int = Field(
+        default=720, description="Max portfolio snapshots (12 hours)"
+    )
+    max_order_history: int = Field(default=10000, description="Max order history")
+
+    # Cleanup periods (how often to run cleanup, in minutes)
+    cleanup_interval_minutes: int = Field(default=60, description="Cleanup interval")
+    order_retention_hours: int = Field(default=24, description="Order retention period")
+    trade_retention_hours: int = Field(default=48, description="Trade retention period")
+    error_retention_hours: int = Field(default=24, description="Error retention period")
+
+
 class ExecutionMetrics(BaseModel):
     """Execution quality metrics."""
 
@@ -75,39 +95,50 @@ class SystemHealth(BaseModel):
 
 
 class ExecutionMonitor:
-    """Comprehensive execution and performance monitoring."""
+    """Comprehensive execution and performance monitoring with memory management."""
 
-    def __init__(self, lookback_minutes: int = 60):
-        """Initialize execution monitor."""
+    def __init__(
+        self, lookback_minutes: int = 60, config: Optional[MonitorConfig] = None
+    ):
+        """Initialize execution monitor with configurable retention policies."""
         self.lookback_minutes = lookback_minutes
+        self.config = config or MonitorConfig()
         self.start_time = datetime.utcnow()
+        self._last_cleanup = datetime.utcnow()
 
-        # Order tracking
+        # Order tracking with configurable limits
         self._orders: Dict[str, Order] = {}
         self._order_timestamps: Dict[str, datetime] = {}
-        self._fill_times: deque = deque(maxlen=1000)
-        self._slippage_records: deque = deque(maxlen=1000)
+        self._fill_times: deque = deque(maxlen=self.config.max_fill_times)
+        self._slippage_records: deque = deque(maxlen=self.config.max_slippage_records)
 
-        # Trade tracking
+        # Trade tracking with configurable limits
         self._trades: Dict[str, List[Trade]] = defaultdict(list)  # by strategy
-        self._trade_timestamps: deque = deque(maxlen=10000)
+        self._trade_timestamps: deque = deque(maxlen=self.config.max_trade_timestamps)
 
-        # Error tracking
-        self._errors: deque = deque(maxlen=1000)
-        self._error_timestamps: deque = deque(maxlen=1000)
+        # Error tracking with configurable limits
+        self._errors: deque = deque(maxlen=self.config.max_error_records)
+        self._error_timestamps: deque = deque(maxlen=self.config.max_error_records)
 
-        # Performance tracking
+        # Performance tracking with configurable limits
         self._strategy_performance: Dict[str, StrategyMetrics] = {}
         self._portfolio_snapshots: deque = deque(
-            maxlen=1440
-        )  # 24 hours of minute snapshots
+            maxlen=self.config.max_portfolio_snapshots
+        )
 
-        logger.info(f"ExecutionMonitor initialized with {lookback_minutes}min lookback")
+        logger.info(
+            f"ExecutionMonitor initialized with {lookback_minutes}min lookback, "
+            f"cleanup every {self.config.cleanup_interval_minutes}min"
+        )
 
     def record_order_submitted(self, order: Order) -> None:
         """Record order submission."""
         self._orders[order.id] = order
         self._order_timestamps[order.id] = datetime.utcnow()
+
+        # Perform periodic cleanup to prevent memory leaks
+        if self.should_cleanup():
+            self.cleanup_old_data()
 
         logger.debug(f"Recorded order submission: {order.id}")
 
@@ -143,6 +174,10 @@ class ExecutionMonitor:
 
         # Update strategy metrics
         self._update_strategy_metrics(strategy_id, trade)
+
+        # Perform periodic cleanup to prevent memory leaks
+        if self.should_cleanup():
+            self.cleanup_old_data()
 
         logger.debug(f"Recorded trade: {trade.id} for strategy {strategy_id}")
 
@@ -429,6 +464,92 @@ class ExecutionMonitor:
         """Get recent errors with timestamps."""
         recent = list(zip(self._error_timestamps, self._errors))[-limit:]
         return recent
+
+    def cleanup_old_data(self) -> Dict[str, int]:
+        """
+        Clean up old data beyond retention periods to prevent memory leaks.
+
+        Returns:
+            Dict with counts of cleaned up items by category
+        """
+        now = datetime.utcnow()
+        cleanup_stats = {
+            "orders_cleaned": 0,
+            "trades_cleaned": 0,
+            "errors_cleaned": 0,
+            "timestamps_cleaned": 0,
+        }
+
+        # Clean up old orders beyond retention period
+        order_cutoff = now - timedelta(hours=self.config.order_retention_hours)
+        orders_to_remove = []
+        for order_id, timestamp in self._order_timestamps.items():
+            if timestamp < order_cutoff:
+                orders_to_remove.append(order_id)
+
+        for order_id in orders_to_remove:
+            self._orders.pop(order_id, None)
+            self._order_timestamps.pop(order_id, None)
+            cleanup_stats["orders_cleaned"] += 1
+
+        # Clean up old trades beyond retention period
+        trade_cutoff = now - timedelta(hours=self.config.trade_retention_hours)
+        original_trade_count = len(self._trade_timestamps)
+
+        # Filter trade timestamps
+        self._trade_timestamps = deque(
+            (ts for ts in self._trade_timestamps if ts > trade_cutoff),
+            maxlen=self.config.max_trade_timestamps,
+        )
+        cleanup_stats["trades_cleaned"] = original_trade_count - len(
+            self._trade_timestamps
+        )
+
+        # Clean up old errors beyond retention period
+        error_cutoff = now - timedelta(hours=self.config.error_retention_hours)
+        original_error_count = len(self._error_timestamps)
+
+        # Filter errors and timestamps together
+        filtered_errors = []
+        filtered_timestamps = []
+        for error, timestamp in zip(self._errors, self._error_timestamps):
+            if timestamp > error_cutoff:
+                filtered_errors.append(error)
+                filtered_timestamps.append(timestamp)
+
+        self._errors = deque(filtered_errors, maxlen=self.config.max_error_records)
+        self._error_timestamps = deque(
+            filtered_timestamps, maxlen=self.config.max_error_records
+        )
+        cleanup_stats["errors_cleaned"] = original_error_count - len(self._errors)
+
+        # Update last cleanup time
+        self._last_cleanup = now
+
+        if any(cleanup_stats.values()):
+            logger.info(f"Memory cleanup completed: {cleanup_stats}")
+
+        return cleanup_stats
+
+    def should_cleanup(self) -> bool:
+        """Check if cleanup should be performed based on configured interval."""
+        cleanup_interval = timedelta(minutes=self.config.cleanup_interval_minutes)
+        return datetime.utcnow() - self._last_cleanup >= cleanup_interval
+
+    def get_memory_stats(self) -> Dict[str, int]:
+        """Get current memory usage statistics."""
+        return {
+            "orders_count": len(self._orders),
+            "order_timestamps_count": len(self._order_timestamps),
+            "fill_times_count": len(self._fill_times),
+            "slippage_records_count": len(self._slippage_records),
+            "trade_timestamps_count": len(self._trade_timestamps),
+            "error_records_count": len(self._errors),
+            "error_timestamps_count": len(self._error_timestamps),
+            "portfolio_snapshots_count": len(self._portfolio_snapshots),
+            "strategy_performance_count": len(self._strategy_performance),
+            "total_trades_count": sum(len(trades) for trades in self._trades.values()),
+        }
 
     def reset_metrics(self) -> None:
         """Reset all metrics (useful for testing)."""
