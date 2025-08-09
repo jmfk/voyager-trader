@@ -14,22 +14,22 @@ from voyager_trader.models.base import (
 )
 
 
-class TestValueObject(ValueObject):
-    """Test value object implementation."""
+class SampleValueObject(ValueObject):
+    """Sample value object implementation for testing."""
 
     name: str
     value: int
 
 
-class TestEntity(BaseEntity):
-    """Test entity implementation."""
+class SampleEntity(BaseEntity):
+    """Sample entity implementation for testing."""
 
     name: str
     description: str
 
 
-class TestAggregateRoot(AggregateRoot):
-    """Test aggregate root implementation."""
+class SampleAggregateRoot(AggregateRoot):
+    """Sample aggregate root implementation for testing."""
 
     name: str
     items: List[str] = []
@@ -47,14 +47,14 @@ class TestAggregateRoot(AggregateRoot):
         return events
 
 
-class TestDomainEvent(DomainEvent):
-    """Test domain event implementation."""
+class SampleDomainEvent(DomainEvent):
+    """Sample domain event implementation for testing."""
 
     test_data: str
 
 
-class TestSpecification(Specification):
-    """Test specification implementation."""
+class SampleSpecification(Specification):
+    """Sample specification implementation for testing."""
 
     def __init__(self, value: int):
         self.value = value
@@ -68,20 +68,20 @@ class TestVoyagerBaseModel:
 
     def test_model_creation(self):
         """Test basic model creation."""
-        vo = TestValueObject(name="test", value=42)
+        vo = SampleValueObject(name="test", value=42)
         assert vo.name == "test"
         assert vo.value == 42
 
     def test_model_immutability(self):
         """Test that models are immutable."""
-        vo = TestValueObject(name="test", value=42)
+        vo = SampleValueObject(name="test", value=42)
         with pytest.raises(ValueError):
             vo.name = "changed"
 
     def test_model_validation(self):
         """Test model validation."""
         with pytest.raises(ValueError):
-            TestValueObject(name="test", value="invalid")  # Should be int
+            SampleValueObject(name="test", value="invalid")  # Should be int
 
 
 class TestBaseEntity:
@@ -89,7 +89,7 @@ class TestBaseEntity:
 
     def test_entity_creation(self):
         """Test entity creation with auto-generated fields."""
-        entity = TestEntity(name="test", description="desc")
+        entity = SampleEntity(name="test", description="desc")
 
         assert entity.name == "test"
         assert entity.description == "desc"
@@ -101,9 +101,9 @@ class TestBaseEntity:
 
     def test_entity_equality(self):
         """Test entity equality based on ID."""
-        entity1 = TestEntity(name="test1", description="desc1")
-        entity2 = TestEntity(name="test2", description="desc2")
-        entity3 = TestEntity(id=entity1.id, name="test3", description="desc3")
+        entity1 = SampleEntity(name="test1", description="desc1")
+        entity2 = SampleEntity(name="test2", description="desc2")
+        entity3 = SampleEntity(id=entity1.id, name="test3", description="desc3")
 
         assert entity1 != entity2  # Different IDs
         assert entity1 == entity3  # Same ID
@@ -111,8 +111,8 @@ class TestBaseEntity:
 
     def test_entity_hash(self):
         """Test entity hashing based on ID."""
-        entity1 = TestEntity(name="test1", description="desc1")
-        entity2 = TestEntity(id=entity1.id, name="test2", description="desc2")
+        entity1 = SampleEntity(name="test1", description="desc1")
+        entity2 = SampleEntity(id=entity1.id, name="test2", description="desc2")
 
         assert hash(entity1) == hash(entity2)
 
@@ -122,7 +122,7 @@ class TestBaseEntity:
 
     def test_entity_update(self):
         """Test entity update mechanism."""
-        entity = TestEntity(name="original", description="desc")
+        entity = SampleEntity(name="original", description="desc")
         original_created = entity.created_at
         original_version = entity.version
 
@@ -136,29 +136,29 @@ class TestBaseEntity:
         assert updated.version == original_version + 1  # Incremented
 
 
-class TestSpecificationPattern:
+class SampleSpecificationPattern:
     """Test Specification pattern implementation."""
 
     def test_specification_evaluation(self):
         """Test specification evaluation."""
-        spec = TestSpecification(10)
+        spec = SampleSpecification(10)
 
         # Mock objects for testing
-        high_value = TestValueObject(name="high", value=20)
-        low_value = TestValueObject(name="low", value=5)
+        high_value = SampleValueObject(name="high", value=20)
+        low_value = SampleValueObject(name="low", value=5)
 
         assert spec.is_satisfied_by(high_value)
         assert not spec.is_satisfied_by(low_value)
 
     def test_and_specification(self):
         """Test AND specification combination."""
-        spec1 = TestSpecification(5)
-        spec2 = TestSpecification(10)
+        spec1 = SampleSpecification(5)
+        spec2 = SampleSpecification(10)
         and_spec = spec1.and_(spec2)
 
-        high_value = TestValueObject(name="high", value=20)
-        mid_value = TestValueObject(name="mid", value=8)
-        low_value = TestValueObject(name="low", value=3)
+        high_value = SampleValueObject(name="high", value=20)
+        mid_value = SampleValueObject(name="mid", value=8)
+        low_value = SampleValueObject(name="low", value=3)
 
         assert and_spec.is_satisfied_by(high_value)  # > 5 AND > 10
         assert not and_spec.is_satisfied_by(mid_value)  # > 5 but not > 10
@@ -166,13 +166,13 @@ class TestSpecificationPattern:
 
     def test_or_specification(self):
         """Test OR specification combination."""
-        spec1 = TestSpecification(15)
-        spec2 = TestSpecification(5)
+        spec1 = SampleSpecification(15)
+        spec2 = SampleSpecification(5)
         or_spec = spec1.or_(spec2)
 
-        high_value = TestValueObject(name="high", value=20)
-        mid_value = TestValueObject(name="mid", value=8)
-        low_value = TestValueObject(name="low", value=3)
+        high_value = SampleValueObject(name="high", value=20)
+        mid_value = SampleValueObject(name="mid", value=8)
+        low_value = SampleValueObject(name="low", value=3)
 
         assert or_spec.is_satisfied_by(high_value)  # > 15 OR > 5
         assert or_spec.is_satisfied_by(mid_value)  # not > 15 but > 5
@@ -180,27 +180,27 @@ class TestSpecificationPattern:
 
     def test_not_specification(self):
         """Test NOT specification."""
-        spec = TestSpecification(10)
+        spec = SampleSpecification(10)
         not_spec = spec.not_()
 
-        high_value = TestValueObject(name="high", value=20)
-        low_value = TestValueObject(name="low", value=5)
+        high_value = SampleValueObject(name="high", value=20)
+        low_value = SampleValueObject(name="low", value=5)
 
         assert not not_spec.is_satisfied_by(high_value)  # NOT (> 10)
         assert not_spec.is_satisfied_by(low_value)  # NOT (> 10)
 
     def test_complex_specification_combination(self):
         """Test complex specification combinations."""
-        spec1 = TestSpecification(5)
-        spec2 = TestSpecification(15)
-        spec3 = TestSpecification(10)
+        spec1 = SampleSpecification(5)
+        spec2 = SampleSpecification(15)
+        spec3 = SampleSpecification(10)
 
         # (> 5 AND > 15) OR NOT (> 10)
         complex_spec = spec1.and_(spec2).or_(spec3.not_())
 
-        very_high = TestValueObject(name="very_high", value=20)  # Satisfies all
-        high = TestValueObject(name="high", value=12)  # > 5, not > 15, > 10
-        low = TestValueObject(name="low", value=3)  # not > 5, not > 15, not > 10
+        very_high = SampleValueObject(name="very_high", value=20)  # Satisfies all
+        high = SampleValueObject(name="high", value=12)  # > 5, not > 15, > 10
+        low = SampleValueObject(name="low", value=3)  # not > 5, not > 15, not > 10
 
         assert complex_spec.is_satisfied_by(
             very_high

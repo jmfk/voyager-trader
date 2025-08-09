@@ -7,7 +7,7 @@ including base entities, value objects, and aggregate roots.
 
 import uuid
 from abc import ABC, abstractmethod
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Optional, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -47,11 +47,11 @@ class BaseEntity(VoyagerBaseModel, ABC):
         description="Unique identifier for the entity",
     )
     created_at: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(timezone.utc),
         description="Timestamp when the entity was created",
     )
     updated_at: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(timezone.utc),
         description="Timestamp when the entity was last updated",
     )
     version: int = Field(default=1, description="Version number for optimistic locking")
@@ -85,7 +85,7 @@ class BaseEntity(VoyagerBaseModel, ABC):
 
         update_data = {
             **kwargs,
-            "updated_at": datetime.utcnow(),
+            "updated_at": datetime.now(timezone.utc),
             "version": new_version,
         }
         return self.model_copy(update=update_data)

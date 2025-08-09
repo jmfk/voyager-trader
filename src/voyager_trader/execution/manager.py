@@ -8,14 +8,14 @@ with thread-safe operations and comprehensive tracking.
 import asyncio
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Dict, List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from ..models.trading import Order, Portfolio, Position, Trade
-from ..models.types import Money, OrderSide, OrderStatus, Symbol
+from ..models.types import Money, OrderStatus, Symbol
 from .interfaces import BrokerageInterface, ExecutionResult
 
 logger = logging.getLogger(__name__)
@@ -29,7 +29,7 @@ class OrderUpdate(BaseModel):
     filled_quantity: Optional[Decimal] = None
     fill_price: Optional[Decimal] = None
     commission: Optional[Money] = None
-    timestamp: datetime = datetime.utcnow()
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class OrderManager:
@@ -53,7 +53,8 @@ class OrderManager:
                 self._orders[order.id] = order
 
                 logger.info(
-                    f"Submitting order {order.id}: {order.side} {order.quantity.amount} {order.symbol.code}"
+                    f"Submitting order {order.id}: {order.side} "
+                    f"{order.quantity.amount} {order.symbol.code}"
                 )
 
                 # Submit to broker
@@ -254,7 +255,8 @@ class PortfolioManager:
         async with self._lock:
             try:
                 logger.info(
-                    f"Processing trade {trade.id}: {trade.side} {trade.quantity.amount} {trade.symbol.code}"
+                    f"Processing trade {trade.id}: {trade.side} "
+                    f"{trade.quantity.amount} {trade.symbol.code}"
                 )
 
                 # Store trade
@@ -480,9 +482,6 @@ class PortfolioManager:
     def get_portfolio_metrics(self) -> Dict[str, Decimal]:
         """Get portfolio performance metrics."""
         total_trades = len(self._trades)
-        winning_trades = len(
-            [t for t in self._trades if t.side == OrderSide.SELL]
-        )  # Simplified
 
         return {
             "total_value": self.portfolio.total_value.amount,
