@@ -6,7 +6,7 @@ Provides abstract interfaces for brokerage integration and a paper trading imple
 
 import uuid
 from abc import ABC, abstractmethod
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Dict, List, Optional
 
@@ -135,7 +135,7 @@ class PaperBroker(BrokerageInterface):
                 side=order.side,
                 quantity=order.quantity,
                 price=exec_price,
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 order_id=order.id,
                 commission=commission,
                 strategy_id=order.strategy_id,
