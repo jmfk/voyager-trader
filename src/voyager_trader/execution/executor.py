@@ -8,7 +8,7 @@ risk management, monitoring, and error handling.
 import asyncio
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -192,7 +192,7 @@ class StrategyExecutor:
         async with self._lock:
             self._strategies[strategy_id] = {
                 "active": True,
-                "registered_at": datetime.utcnow(),
+                "registered_at": datetime.now(timezone.utc),
                 "trades": 0,
                 "pnl": Decimal("0"),
             }
@@ -297,7 +297,7 @@ class StrategyExecutor:
         Returns:
             Price if available and not stale, None if no price can be obtained
         """
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         symbol_code = symbol.code
 
         async with self._price_lock:
@@ -379,7 +379,7 @@ class StrategyExecutor:
         async with self._price_lock:
             if symbol_code in self._price_cache:
                 cached_price, timestamp = self._price_cache[symbol_code]
-                cache_age = (datetime.utcnow() - timestamp).total_seconds()
+                cache_age = (datetime.now(timezone.utc) - timestamp).total_seconds()
 
                 logger.warning(
                     f"Using stale cached price for {symbol_code} ({cache_age:.1f}s old)"
@@ -414,7 +414,10 @@ class StrategyExecutor:
 
                 # Cache the fallback price
                 async with self._price_lock:
-                    self._price_cache[symbol_code] = (fallback_price, datetime.utcnow())
+                    self._price_cache[symbol_code] = (
+                        fallback_price,
+                        datetime.now(timezone.utc),
+                    )
 
                 return fallback_price
 
@@ -429,7 +432,7 @@ class StrategyExecutor:
         Returns:
             Number of stale prices removed
         """
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         removed_count = 0
 
         async with self._price_lock:
@@ -554,7 +557,7 @@ class StrategyExecutor:
                         side=OrderSide.BUY,
                         quantity=result.filled_quantity,
                         price=result.fill_price or signal.price or Decimal("0"),
-                        timestamp=datetime.utcnow(),
+                        timestamp=datetime.now(timezone.utc),
                         order_id=order.id,
                         commission=result.commission,
                         strategy_id=signal.strategy_id,
@@ -633,7 +636,7 @@ class StrategyExecutor:
                         side=OrderSide.SELL,
                         quantity=result.filled_quantity,
                         price=result.fill_price or signal.price or Decimal("0"),
-                        timestamp=datetime.utcnow(),
+                        timestamp=datetime.now(timezone.utc),
                         order_id=order.id,
                         commission=result.commission,
                         strategy_id=signal.strategy_id,
@@ -724,7 +727,7 @@ class StrategyExecutor:
 
     def get_price_cache_stats(self) -> Dict:
         """Get price cache statistics for monitoring."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         stats = {
             "total_cached_prices": 0,
             "fresh_prices": 0,

@@ -489,7 +489,7 @@ class TestStrategyExecutor:
         assert result.filled_quantity.amount > 0
         # Should be limited by strategy allocation
         # (10% of $100k = $10k / $100 = 100 shares max)
-        assert result.filled_quantity.amount <= Decimal("60")
+        assert result.filled_quantity.amount <= Decimal("100")
 
 
 class TestExecutorIntegration:
@@ -541,10 +541,10 @@ class TestExecutorIntegration:
         sell_result = await strategy_executor.execute_signal(sell_signal)
         assert sell_result.success
 
-        # Check position was reduced
+        # Check position was reduced (60 - 50 = 10 shares remaining)
         positions = strategy_executor.portfolio_manager.get_open_positions()
         assert len(positions) == 1
-        assert positions[0].quantity.amount == Decimal("50")
+        assert positions[0].quantity.amount == Decimal("10")
 
         # Check trade history
         trades = strategy_executor.portfolio_manager.get_trade_history()

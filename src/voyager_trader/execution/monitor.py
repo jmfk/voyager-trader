@@ -7,7 +7,7 @@ and system health metrics.
 
 import logging
 from collections import defaultdict, deque
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Dict, List, Optional, Tuple
 
@@ -91,7 +91,7 @@ class SystemHealth(BaseModel):
     error_rate_percent: Decimal = Field(description="Error rate percentage")
     memory_usage_mb: Optional[Decimal] = Field(default=None, description="Memory usage")
     cpu_usage_percent: Optional[Decimal] = Field(default=None, description="CPU usage")
-    last_heartbeat: datetime = Field(default_factory=datetime.utcnow)
+    last_heartbeat: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class ExecutionMonitor:
@@ -103,8 +103,8 @@ class ExecutionMonitor:
         """Initialize execution monitor with configurable retention policies."""
         self.lookback_minutes = lookback_minutes
         self.config = config or MonitorConfig()
-        self.start_time = datetime.utcnow()
-        self._last_cleanup = datetime.utcnow()
+        self.start_time = datetime.now(timezone.utc)
+        self._last_cleanup = datetime.now(timezone.utc)
 
         # Order tracking with configurable limits
         self._orders: Dict[str, Order] = {}
@@ -134,7 +134,7 @@ class ExecutionMonitor:
     def record_order_submitted(self, order: Order) -> None:
         """Record order submission."""
         self._orders[order.id] = order
-        self._order_timestamps[order.id] = datetime.utcnow()
+        self._order_timestamps[order.id] = datetime.now(timezone.utc)
 
         # Perform periodic cleanup to prevent memory leaks
         if self.should_cleanup():
@@ -147,7 +147,7 @@ class ExecutionMonitor:
     ) -> None:
         """Record order fill."""
         if fill_time is None:
-            fill_time = datetime.utcnow()
+            fill_time = datetime.now(timezone.utc)
 
         # Calculate fill time
         if order.id in self._order_timestamps:
@@ -170,7 +170,7 @@ class ExecutionMonitor:
         """Record executed trade."""
         strategy_id = trade.strategy_id or "default"
         self._trades[strategy_id].append(trade)
-        self._trade_timestamps.append(datetime.utcnow())
+        self._trade_timestamps.append(datetime.now(timezone.utc))
 
         # Update strategy metrics
         self._update_strategy_metrics(strategy_id, trade)
@@ -184,13 +184,13 @@ class ExecutionMonitor:
     def record_error(self, error: str, context: Optional[Dict] = None) -> None:
         """Record system error."""
         self._errors.append(error)
-        self._error_timestamps.append(datetime.utcnow())
+        self._error_timestamps.append(datetime.now(timezone.utc))
 
         logger.warning(f"Recorded error: {error}")
 
     def record_portfolio_snapshot(self, portfolio: Portfolio) -> None:
         """Record portfolio snapshot for performance tracking."""
-        self._portfolio_snapshots.append((datetime.utcnow(), portfolio))
+        self._portfolio_snapshots.append((datetime.now(timezone.utc), portfolio))
 
         logger.debug(
             f"Recorded portfolio snapshot: value={portfolio.total_value.amount}"
@@ -198,7 +198,9 @@ class ExecutionMonitor:
 
     def get_execution_metrics(self) -> ExecutionMetrics:
         """Get current execution metrics."""
-        cutoff_time = datetime.utcnow() - timedelta(minutes=self.lookback_minutes)
+        cutoff_time = datetime.now(timezone.utc) - timedelta(
+            minutes=self.lookback_minutes
+        )
 
         # Filter recent orders
         recent_orders = [
@@ -262,7 +264,7 @@ class ExecutionMonitor:
 
     def get_system_health(self) -> SystemHealth:
         """Get system health metrics."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         uptime_seconds = int((now - self.start_time).total_seconds())
 
         # Calculate rates over last minute
@@ -274,9 +276,6 @@ class ExecutionMonitor:
         )
         recent_trades = sum(
             1 for timestamp in self._trade_timestamps if timestamp >= minute_ago
-        )
-        recent_errors = sum(
-            1 for timestamp in self._error_timestamps if timestamp >= minute_ago
         )
 
         # Calculate error rate over last hour
@@ -306,7 +305,7 @@ class ExecutionMonitor:
         if not self._portfolio_snapshots:
             return {}
 
-        cutoff_time = datetime.utcnow() - timedelta(days=days)
+        cutoff_time = datetime.now(timezone.utc) - timedelta(days=days)
         recent_snapshots = [
             (timestamp, portfolio)
             for timestamp, portfolio in self._portfolio_snapshots
@@ -472,7 +471,7 @@ class ExecutionMonitor:
         Returns:
             Dict with counts of cleaned up items by category
         """
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         cleanup_stats = {
             "orders_cleaned": 0,
             "trades_cleaned": 0,
@@ -534,7 +533,7 @@ class ExecutionMonitor:
     def should_cleanup(self) -> bool:
         """Check if cleanup should be performed based on configured interval."""
         cleanup_interval = timedelta(minutes=self.config.cleanup_interval_minutes)
-        return datetime.utcnow() - self._last_cleanup >= cleanup_interval
+        return datetime.now(timezone.utc) - self._last_cleanup >= cleanup_interval
 
     def get_memory_stats(self) -> Dict[str, int]:
         """Get current memory usage statistics."""
@@ -564,5 +563,5 @@ class ExecutionMonitor:
         self._strategy_performance.clear()
         self._portfolio_snapshots.clear()
 
-        self.start_time = datetime.utcnow()
+        self.start_time = datetime.now(timezone.utc)
         logger.info("ExecutionMonitor metrics reset")
