@@ -183,7 +183,7 @@ class StrategyExecutor:
 
         # Check total allocation doesn't exceed 100%
         total_allocation = sum(self._strategy_allocations.values()) + allocation_percent
-        if total_allocation > 100:
+        if total_allocation > Decimal("100"):
             logger.error(
                 f"Total strategy allocation would exceed 100%: {total_allocation}%"
             )
@@ -328,7 +328,7 @@ class StrategyExecutor:
                 if symbol_code in self._price_cache:
                     cached_price, _ = self._price_cache[symbol_code]
                     price_change_percent = abs(
-                        (fresh_price - cached_price) / cached_price * 100
+                        (fresh_price - cached_price) / cached_price * Decimal("100")
                     )
 
                     if (
@@ -396,7 +396,8 @@ class StrategyExecutor:
         for position in positions:
             if position.symbol.code == symbol_code and position.current_price:
                 spread_adjustment = position.current_price * (
-                    self.config.price_data_config.fallback_price_spread_percent / 100
+                    self.config.price_data_config.fallback_price_spread_percent
+                    / Decimal("100")
                 )
                 fallback_price = position.current_price + spread_adjustment
 
@@ -467,7 +468,7 @@ class StrategyExecutor:
                     signal.strategy_id, Decimal("10")
                 )
                 allocation_amount = current_portfolio.total_value.amount * (
-                    allocation / 100
+                    allocation / Decimal("100")
                 )
 
                 current_price = await self._get_robust_price(signal.symbol)
@@ -490,7 +491,7 @@ class StrategyExecutor:
                 max_shares_by_allocation = allocation_amount / current_price
                 quantity = min(quantity, max_shares_by_allocation)
 
-            if quantity <= 0:
+            if quantity <= Decimal("0"):
                 return ExecutionResult(
                     success=False,
                     order_id="",
