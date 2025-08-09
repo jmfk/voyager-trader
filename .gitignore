@@ -36,7 +36,7 @@ wheels/
 .installed.cfg
 *.egg
 MANIFEST
-cache
+cache/
 
 # Testing
 .pytest_cache/
@@ -64,3 +64,4 @@ coverage.xml
 .mypy_cache/
 .dmypy.json
 dmypy.json
+cache/
