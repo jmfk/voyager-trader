@@ -7,7 +7,7 @@ the trading system to track all actions, changes, and system events.
 
 import logging
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
 from ..models.base import BaseEntity
 from .database import DatabaseManager, get_database
@@ -584,11 +584,15 @@ class AuditService:
         if entity_type and entity_id:
             return await self._audit_repo.find_by_entity(entity_type, entity_id, limit)
         elif action:
-            return await self._audit_repo.find_by_action(action, start_date, end_date, limit)
+            return await self._audit_repo.find_by_action(
+                action, start_date, end_date, limit
+            )
         else:
             # For more complex queries, we'd need to extend the repository
             # For now, return recent logs
-            return await self._audit_repo.find_by_action("*", start_date, end_date, limit)
+            return await self._audit_repo.find_by_action(
+                "*", start_date, end_date, limit
+            )
 
     async def get_entity_history(
         self,
@@ -655,7 +659,9 @@ async def audit_entity_created(entity: BaseEntity, **kwargs) -> str:
     return await service.log_entity_created(entity, **kwargs)
 
 
-async def audit_entity_updated(old_entity: BaseEntity, new_entity: BaseEntity, **kwargs) -> str:
+async def audit_entity_updated(
+    old_entity: BaseEntity, new_entity: BaseEntity, **kwargs
+) -> str:
     """Convenience function to audit entity updates."""
     service = await get_audit_service()
     return await service.log_entity_updated(old_entity, new_entity, **kwargs)
