@@ -135,7 +135,9 @@ class DatabaseManager:
                 await conn.rollback()
                 raise
 
-    async def execute(self, query: str, parameters: tuple = (), fetch: str = "none") -> Any:
+    async def execute(
+        self, query: str, parameters: tuple = (), fetch: str = "none"
+    ) -> Any:
         """
         Execute a database query.
 
@@ -173,7 +175,7 @@ class DatabaseManager:
 
     async def _create_tables(self) -> None:
         """Create database tables from schema file."""
-        schema_path = Path(__file__).parent / "schema.sql"
+        schema_path = Path(__file__).parent / "simple_schema.sql"
 
         if not schema_path.exists():
             raise FileNotFoundError(f"Schema file not found: {schema_path}")
@@ -246,7 +248,7 @@ class DatabaseManager:
             True if table exists, False otherwise
         """
         query = """
-            SELECT name FROM sqlite_master 
+            SELECT name FROM sqlite_master
             WHERE type='table' AND name=?
         """
         result = await self.execute(query, (table_name,), fetch="one")
@@ -321,7 +323,9 @@ async def get_database() -> DatabaseManager:
 
             settings = get_settings()
             db_manager = DatabaseManager(
-                database_url=getattr(settings, "DATABASE_URL", "sqlite:///voyager_trader.db"),
+                database_url=getattr(
+                    settings, "DATABASE_URL", "sqlite:///voyager_trader.db"
+                ),
                 pool_size=getattr(settings, "DB_POOL_SIZE", 10),
                 max_overflow=getattr(settings, "DB_MAX_OVERFLOW", 20),
                 echo=getattr(settings, "DB_ECHO", False),
