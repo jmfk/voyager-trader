@@ -146,7 +146,7 @@ account = Account(
 
 # Save with audit logging
 saved_account = await service.create_account(
-    account, 
+    account,
     user_id="user-123"
 )
 
@@ -296,7 +296,7 @@ history = await audit.get_entity_history("account", "account-123")
 
 # Get user activity
 user_logs = await audit.get_user_activity(
-    "user-123", 
+    "user-123",
     start_date=datetime(2024, 1, 1),
     end_date=datetime(2024, 12, 31)
 )

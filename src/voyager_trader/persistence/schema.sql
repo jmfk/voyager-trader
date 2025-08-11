@@ -222,7 +222,7 @@ CREATE INDEX idx_domain_events_occurred_at ON domain_events(occurred_at);
 CREATE INDEX idx_domain_events_processed ON domain_events(processed);
 
 -- Triggers for automatically updating updated_at timestamps
-CREATE TRIGGER update_accounts_timestamp 
+CREATE TRIGGER update_accounts_timestamp
     AFTER UPDATE ON accounts
     FOR EACH ROW
     WHEN NEW.updated_at = OLD.updated_at
@@ -230,7 +230,7 @@ BEGIN
     UPDATE accounts SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
 END;
 
-CREATE TRIGGER update_portfolios_timestamp 
+CREATE TRIGGER update_portfolios_timestamp
     AFTER UPDATE ON portfolios
     FOR EACH ROW
     WHEN NEW.updated_at = OLD.updated_at
@@ -238,7 +238,7 @@ BEGIN
     UPDATE portfolios SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
 END;
 
-CREATE TRIGGER update_orders_timestamp 
+CREATE TRIGGER update_orders_timestamp
     AFTER UPDATE ON orders
     FOR EACH ROW
     WHEN NEW.updated_at = OLD.updated_at
@@ -246,7 +246,7 @@ BEGIN
     UPDATE orders SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
 END;
 
-CREATE TRIGGER update_trades_timestamp 
+CREATE TRIGGER update_trades_timestamp
     AFTER UPDATE ON trades
     FOR EACH ROW
     WHEN NEW.updated_at = OLD.updated_at
@@ -254,7 +254,7 @@ BEGIN
     UPDATE trades SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
 END;
 
-CREATE TRIGGER update_positions_timestamp 
+CREATE TRIGGER update_positions_timestamp
     AFTER UPDATE ON positions
     FOR EACH ROW
     WHEN NEW.updated_at = OLD.updated_at
@@ -264,11 +264,11 @@ END;
 
 -- Views for common queries
 CREATE VIEW v_open_positions AS
-SELECT 
+SELECT
     p.*,
-    (p.current_price - p.entry_price) * p.quantity_amount * 
+    (p.current_price - p.entry_price) * p.quantity_amount *
     CASE WHEN p.position_type = 'long' THEN 1 ELSE -1 END as unrealized_pnl,
-    ((p.current_price - p.entry_price) / p.entry_price) * 100 * 
+    ((p.current_price - p.entry_price) / p.entry_price) * 100 *
     CASE WHEN p.position_type = 'long' THEN 1 ELSE -1 END as unrealized_pnl_percent
 FROM positions p
 WHERE p.exit_timestamp IS NULL;
@@ -279,7 +279,7 @@ FROM orders
 WHERE status IN ('pending', 'submitted', 'accepted', 'partially_filled');
 
 CREATE VIEW v_portfolio_summary AS
-SELECT 
+SELECT
     pf.id,
     pf.name,
     pf.account_id,
