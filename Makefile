@@ -440,7 +440,7 @@ ps-start: venv-check ## Start all VOYAGER-Trader processes (backend + frontend)
 	@echo "  🔧 API Documentation: http://localhost:8001/docs"
 	@echo "  ❤️  Health Check: http://localhost:8001/api/health"
 	@echo ""
-	@echo "Credentials: admin / admin123"
+	@echo "Default Credentials: admin / (set via VOYAGER_ADMIN_PASSWORD)"
 	@echo ""
 	@echo "Commands:"
 	@echo "  make ps-stop      # Stop all processes"

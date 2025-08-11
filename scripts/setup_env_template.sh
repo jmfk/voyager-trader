@@ -55,6 +55,11 @@ export VOYAGER_JWT_SECRET="$(openssl rand -base64 32 2>/dev/null || python3 -c '
 # JWT token expiration time in minutes
 export VOYAGER_JWT_EXPIRE_MINUTES="30"
 
+# Admin credentials (CHANGE FOR PRODUCTION!)
+export VOYAGER_ADMIN_PASSWORD="your-secure-admin-password"
+# Or set pre-hashed password (takes precedence):
+# export VOYAGER_ADMIN_PASSWORD_HASH="$2b$12$your-bcrypt-hash-here"
+
 # =========================================================
 # Development Configuration
 # =========================================================
