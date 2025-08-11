@@ -23,7 +23,7 @@ try:
     PASSLIB_AVAILABLE = True
 except ImportError:
     try:
-        pass
+        import bcrypt
 
         PASSLIB_AVAILABLE = False
     except ImportError:
@@ -31,7 +31,9 @@ except ImportError:
             "Either passlib or bcrypt must be installed for password hashing"
         )
 
-from .core import VoyagerTrader
+from .core import VoyagerTrader, TradingConfig
+from .skills import SkillLibrary
+from .curriculum import AutomaticCurriculum
 
 
 # Security configuration
