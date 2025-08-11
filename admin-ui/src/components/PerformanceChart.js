@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar } from 'recharts';
 import apiService from '../services/api';
+import { createLogger } from '../utils/logger';
 
 const PerformanceChart = () => {
   const [performanceData, setPerformanceData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const logger = createLogger('PerformanceChart');
 
   useEffect(() => {
     loadPerformanceData();
@@ -14,8 +16,14 @@ const PerformanceChart = () => {
     try {
       const data = await apiService.getPerformanceMetrics();
       setPerformanceData(data);
+      logger.debug('Performance data loaded successfully', {
+        totalTrades: data?.total_trades || 0,
+        winRate: data?.win_rate || 0,
+        totalReturn: data?.total_return || 0,
+        hasTradeHistory: !!(data?.trade_history?.length)
+      });
     } catch (error) {
-      console.error('Failed to load performance data:', error);
+      logger.apiError('/api/performance', error);
     } finally {
       setLoading(false);
     }

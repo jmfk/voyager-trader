@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { DocumentTextIcon, ExclamationTriangleIcon, InformationCircleIcon } from '@heroicons/react/24/outline';
 import apiService from '../services/api';
+import { createLogger } from '../utils/logger';
 
 const LogsPanel = () => {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
   const [autoRefresh, setAutoRefresh] = useState(true);
+  const logger = createLogger('LogsPanel');
 
   useEffect(() => {
     loadLogs();
@@ -25,8 +27,11 @@ const LogsPanel = () => {
     try {
       const logsData = await apiService.getSystemLogs(200);
       setLogs(logsData.logs || []);
+      logger.debug('System logs loaded successfully', { 
+        logCount: logsData.logs?.length || 0 
+      });
     } catch (error) {
-      console.error('Failed to load logs:', error);
+      logger.apiError('/api/logs', error);
     } finally {
       setLoading(false);
     }
