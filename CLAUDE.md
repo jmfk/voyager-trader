@@ -14,6 +14,25 @@ VOYAGER-Trader: An autonomous, self-improving trading system inspired by the VOY
 
 ## Development Commands
 
+### Admin Interface
+```bash
+# Test admin interface setup
+python test_admin_setup.py
+
+# Start the admin interface (backend + frontend instructions)
+python start_admin.py
+
+# Manual backend start
+python -m uvicorn src.voyager_trader.admin_api:app --reload --host 0.0.0.0 --port 8001
+
+# Manual frontend start (in new terminal)
+cd admin-ui && npm install && npm start
+```
+
+Default admin credentials: admin / admin123
+- Admin Interface: http://localhost:3001
+- API Documentation: http://localhost:8001/docs
+
 ### Core Development Workflow
 ```bash
 # Setup virtual environment
