@@ -362,6 +362,15 @@ admin-frontend: ## Start only the React frontend (requires backend running)
 	@echo "⚠️  Make sure backend is running (make admin-backend)"
 	@cd admin-ui && npm start
 
+# JWT Secret Management
+jwt-generate: venv-check ## Generate a new JWT secret for admin interface
+	@echo "🔐 Generating JWT secret..."
+	@$(PYTHON_VENV) scripts/generate_jwt_secret.py
+
+jwt-setup: venv-check ## Generate and save JWT secret to .env file
+	@echo "🔐 Setting up persistent JWT secret..."
+	@$(PYTHON_VENV) scripts/generate_jwt_secret.py --env
+
 # Process Management
 ps-show: ## Show all VOYAGER-Trader related processes
 	@echo "🔍 VOYAGER-Trader Processes"

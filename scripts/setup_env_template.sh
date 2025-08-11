@@ -45,6 +45,17 @@ export GOOGLE_AI_API_KEY="your-google-ai-key"
 export HUGGINGFACE_API_KEY="hf_your-huggingface-token"
 
 # =========================================================
+# Admin Interface Security
+# =========================================================
+
+# JWT Secret for admin interface authentication
+# Generate a secure secret or set your own
+export VOYAGER_JWT_SECRET="$(openssl rand -base64 32 2>/dev/null || python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
+
+# JWT token expiration time in minutes
+export VOYAGER_JWT_EXPIRE_MINUTES="30"
+
+# =========================================================
 # Development Configuration
 # =========================================================
 
@@ -56,3 +67,4 @@ export DEBUG="true"
 
 echo "✅ Environment variables loaded!"
 echo "💡 Run 'make config-check' to verify configuration"
+echo "🔐 JWT Secret configured for admin interface security"
