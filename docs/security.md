@@ -159,6 +159,126 @@ export VOYAGER_CORS_ORIGINS="https://your-admin-domain.com"
 export VOYAGER_CORS_ORIGINS="https://domain1.com,https://domain2.com,https://domain3.com"
 ```
 
+## Rate Limiting
+
+Rate limiting prevents API abuse by restricting the number of requests from each client. This is essential for preventing brute force attacks and maintaining system performance.
+
+### Environment Variables
+
+| Variable | Description | Default | Purpose |
+|----------|-------------|---------|---------|
+| `VOYAGER_RATE_LIMIT_LOGIN` | Login attempts per time period | `5/minute` | Prevent brute force attacks |
+| `VOYAGER_RATE_LIMIT_API` | API requests per time period | `100/minute` | General API protection |
+| `VOYAGER_RATE_LIMIT_HEALTH` | Health check requests per time period | `60/minute` | Monitoring endpoint protection |
+| `VOYAGER_RATE_LIMIT_STORAGE` | Storage backend for rate limiting | `memory://` | Rate limit data storage |
+
+### Rate Limit Formats
+
+Rate limits use the format `number/period` where period can be:
+- `second` - Per second
+- `minute` - Per minute  
+- `hour` - Per hour
+- `day` - Per day
+
+Examples: `5/minute`, `100/hour`, `1000/day`
+
+### Configuration Examples
+
+#### 1. Development (Default)
+```bash
+# No configuration needed - uses safe defaults
+# LOGIN: 5/minute, API: 100/minute, HEALTH: 60/minute
+```
+
+#### 2. Production (Stricter)
+```bash
+# Stricter limits for production
+export VOYAGER_RATE_LIMIT_LOGIN="3/minute"
+export VOYAGER_RATE_LIMIT_API="60/minute" 
+export VOYAGER_RATE_LIMIT_HEALTH="30/minute"
+```
+
+#### 3. High Traffic (Relaxed)
+```bash
+# Higher limits for high-traffic environments
+export VOYAGER_RATE_LIMIT_LOGIN="10/minute"
+export VOYAGER_RATE_LIMIT_API="500/minute"
+export VOYAGER_RATE_LIMIT_HEALTH="120/minute"
+```
+
+#### 4. Redis Storage (Production)
+```bash
+# Use Redis for distributed rate limiting
+export VOYAGER_RATE_LIMIT_STORAGE="redis://localhost:6379/0"
+
+# Or Redis with authentication
+export VOYAGER_RATE_LIMIT_STORAGE="redis://:password@localhost:6379/0"
+```
+
+### Storage Backends
+
+#### Memory (Development)
+- **URI**: `memory://`
+- **Pros**: Simple, no external dependencies
+- **Cons**: Not shared across processes/instances
+- **Use case**: Development, single-instance deployments
+
+#### Redis (Production)
+- **URI**: `redis://host:port/db` or `redis://:password@host:port/db`
+- **Pros**: Distributed, persistent, scalable
+- **Cons**: Requires Redis server
+- **Use case**: Production, multi-instance deployments
+
+### Security Benefits
+
+1. **Brute Force Protection**: Login rate limiting prevents password attacks
+2. **DoS Prevention**: API rate limiting prevents resource exhaustion
+3. **Fair Usage**: Ensures equal access for all legitimate users
+4. **Cost Control**: Prevents excessive API usage and associated costs
+
+### Testing Rate Limits
+
+```bash
+# Check current configuration
+make rate-limit-check
+
+# Test rate limiting functionality
+make rate-limit-test
+
+# Manual testing with curl
+for i in {1..10}; do curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8001/api/health; done
+```
+
+### Common Rate Limit Issues
+
+#### Issue: 429 Too Many Requests
+```bash
+# Problem: Client hitting rate limits
+# Solution: Implement exponential backoff in client
+# Or increase limits if legitimate traffic
+
+export VOYAGER_RATE_LIMIT_API="200/minute"
+```
+
+#### Issue: Rate Limits Not Working
+```bash
+# Check that slowapi is installed
+pip install slowapi
+
+# Check rate limit configuration
+make rate-limit-check
+
+# Test rate limiting
+make rate-limit-test
+```
+
+### Rate Limit Headers
+
+When rate limiting is active, responses include headers:
+- `X-RateLimit-Limit`: Total requests allowed
+- `X-RateLimit-Remaining`: Requests remaining in current period
+- `Retry-After`: Seconds to wait before retrying (when limited)
+
 ### API Endpoints
 
 - **Login**: `POST /api/auth/login`

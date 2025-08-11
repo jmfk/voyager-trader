@@ -63,6 +63,12 @@ export VOYAGER_ADMIN_PASSWORD="your-secure-admin-password"
 # CORS origins for production (comma-separated)
 export VOYAGER_CORS_ORIGINS="https://your-domain.com,https://admin.your-domain.com"
 
+# Rate limiting configuration
+export VOYAGER_RATE_LIMIT_LOGIN="5/minute"      # Login attempts per minute
+export VOYAGER_RATE_LIMIT_API="100/minute"      # API requests per minute  
+export VOYAGER_RATE_LIMIT_HEALTH="60/minute"    # Health check requests per minute
+export VOYAGER_RATE_LIMIT_STORAGE="memory://"   # Storage backend for rate limiting
+
 # =========================================================
 # Development Configuration
 # =========================================================

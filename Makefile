@@ -394,6 +394,27 @@ cors-check: venv-check ## Show current CORS configuration
 		echo "   export VOYAGER_CORS_ORIGINS=\"https://admin.yourdomain.com\""; \
 	fi
 
+# Rate Limiting Configuration
+rate-limit-test: venv-check ## Test current rate limiting configuration
+	@echo "🛡️  Testing rate limiting..."
+	@$(PYTHON_VENV) scripts/test_rate_limit.py
+
+rate-limit-check: venv-check ## Show current rate limiting configuration
+	@echo "🔍 Current Rate Limiting Configuration"
+	@echo "====================================="
+	@echo ""
+	@echo "Rate Limits:"
+	@echo "  LOGIN: $${VOYAGER_RATE_LIMIT_LOGIN:-5/minute}"
+	@echo "  API:   $${VOYAGER_RATE_LIMIT_API:-100/minute}"
+	@echo "  HEALTH: $${VOYAGER_RATE_LIMIT_HEALTH:-60/minute}"
+	@echo ""
+	@echo "Storage Backend:"
+	@echo "  $${VOYAGER_RATE_LIMIT_STORAGE:-memory://}"
+	@echo ""
+	@echo "💡 Customize rate limits with environment variables:"
+	@echo "   export VOYAGER_RATE_LIMIT_LOGIN=\"3/minute\""
+	@echo "   export VOYAGER_RATE_LIMIT_API=\"200/minute\""
+
 # Process Management
 ps-show: ## Show all VOYAGER-Trader related processes
 	@echo "🔍 VOYAGER-Trader Processes"
