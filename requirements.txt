@@ -42,6 +42,7 @@ python-multipart>=0.0.6
 python-jose[cryptography]>=3.3.0
 libpass>=1.0.0
 bcrypt>=4.0.1
+slowapi>=0.1.9
 
 # Logging and monitoring
 loguru>=0.7.0

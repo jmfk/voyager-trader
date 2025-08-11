@@ -11,11 +11,14 @@ import secrets
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, status, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from pydantic import BaseModel
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 try:
     from passlib.context import CryptContext
@@ -73,6 +76,34 @@ def get_cors_origins() -> List[str]:
     return default_origins
 
 
+def get_rate_limit_config() -> Dict[str, str]:
+    """Get rate limiting configuration from environment or use defaults."""
+    config = {
+        "login": os.getenv("VOYAGER_RATE_LIMIT_LOGIN", "5/minute"),
+        "api": os.getenv("VOYAGER_RATE_LIMIT_API", "100/minute"),
+        "health": os.getenv("VOYAGER_RATE_LIMIT_HEALTH", "60/minute"),
+    }
+
+    # Log configuration for transparency
+    logging.info(f"Rate limiting configuration: {config}")
+
+    return config
+
+
+def create_limiter() -> Limiter:
+    """Create and configure rate limiter."""
+    # Get rate limit storage backend from environment
+    storage_uri = os.getenv("VOYAGER_RATE_LIMIT_STORAGE", "memory://")
+
+    limiter = Limiter(
+        key_func=get_remote_address,
+        storage_uri=storage_uri,
+    )
+
+    logging.info(f"Rate limiter initialized with storage: {storage_uri}")
+    return limiter
+
+
 SECRET_KEY = get_secret_key()
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("VOYAGER_JWT_EXPIRE_MINUTES", "30"))
@@ -82,6 +113,10 @@ if PASSLIB_AVAILABLE:
 else:
     pwd_context = None
 security = HTTPBearer()
+
+# Rate limiting configuration
+rate_limit_config = get_rate_limit_config()
+limiter = create_limiter()
 
 
 # Simple user database (in production, use proper database)
@@ -153,6 +188,10 @@ app = FastAPI(
     description="Admin interface for the VoyagerTrader autonomous trading system",
     version="1.0.0",
 )
+
+# Rate limiting
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # CORS middleware
 app.add_middleware(
@@ -237,7 +276,8 @@ async def get_current_user(
 
 # API Endpoints
 @app.post("/api/auth/login", response_model=Token)
-async def login(user_credentials: UserLogin):
+@limiter.limit(rate_limit_config["login"])
+async def login(request: Request, user_credentials: UserLogin):
     """Authenticate user and return JWT token."""
     user = authenticate_user(user_credentials.username, user_credentials.password)
     if not user:
@@ -254,7 +294,10 @@ async def login(user_credentials: UserLogin):
 
 
 @app.get("/api/status", response_model=SystemStatus)
-async def get_system_status(current_user: dict = Depends(get_current_user)):
+@limiter.limit(rate_limit_config["api"])
+async def get_system_status(
+    request: Request, current_user: dict = Depends(get_current_user)
+):
     """Get current system status."""
     trader = get_trader()
     status = trader.get_status()
@@ -272,8 +315,11 @@ async def get_system_status(current_user: dict = Depends(get_current_user)):
 
 
 @app.post("/api/system/control")
+@limiter.limit(rate_limit_config["api"])
 async def control_system(
-    command: SystemCommand, current_user: dict = Depends(get_current_user)
+    request: Request,
+    command: SystemCommand,
+    current_user: dict = Depends(get_current_user),
 ):
     """Control the trading system (start/stop/restart)."""
     trader = get_trader()
@@ -300,7 +346,8 @@ async def control_system(
 
 
 @app.get("/api/skills", response_model=List[SkillInfo])
-async def get_skills(current_user: dict = Depends(get_current_user)):
+@limiter.limit(rate_limit_config["api"])
+async def get_skills(request: Request, current_user: dict = Depends(get_current_user)):
     """Get list of all skills in the skill library."""
     trader = get_trader()
     skills_data = []
@@ -323,7 +370,10 @@ async def get_skills(current_user: dict = Depends(get_current_user)):
 
 
 @app.get("/api/performance")
-async def get_performance_metrics(current_user: dict = Depends(get_current_user)):
+@limiter.limit(rate_limit_config["api"])
+async def get_performance_metrics(
+    request: Request, current_user: dict = Depends(get_current_user)
+):
     """Get detailed performance metrics."""
     trader = get_trader()
 
@@ -361,8 +411,9 @@ async def get_performance_metrics(current_user: dict = Depends(get_current_user)
 
 
 @app.get("/api/logs")
+@limiter.limit(rate_limit_config["api"])
 async def get_system_logs(
-    current_user: dict = Depends(get_current_user), limit: int = 100
+    request: Request, current_user: dict = Depends(get_current_user), limit: int = 100
 ):
     """Get recent system logs."""
     try:
@@ -439,7 +490,8 @@ async def get_system_logs(
 
 
 @app.get("/api/health")
-async def health_check():
+@limiter.limit(rate_limit_config["health"])
+async def health_check(request: Request):
     """Health check endpoint."""
     return {"status": "healthy", "timestamp": datetime.now().isoformat()}
 
