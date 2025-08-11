@@ -11,14 +11,14 @@ import secrets
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
-from fastapi import Depends, FastAPI, HTTPException, status, Request
+from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from pydantic import BaseModel
 from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 try:
     from passlib.context import CryptContext
@@ -26,7 +26,7 @@ try:
     PASSLIB_AVAILABLE = True
 except ImportError:
     try:
-        import bcrypt
+        pass
 
         PASSLIB_AVAILABLE = False
     except ImportError:
@@ -34,9 +34,7 @@ except ImportError:
             "Either passlib or bcrypt must be installed for password hashing"
         )
 
-from .core import VoyagerTrader, TradingConfig
-from .skills import SkillLibrary
-from .curriculum import AutomaticCurriculum
+from .core import VoyagerTrader
 
 
 # Security configuration
