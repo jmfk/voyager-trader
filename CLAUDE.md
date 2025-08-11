@@ -33,6 +33,16 @@ Default admin credentials: admin / admin123
 - Admin Interface: http://localhost:3001
 - API Documentation: http://localhost:8001/docs
 
+**Security Configuration:**
+```bash
+# Set persistent JWT secret for production
+export VOYAGER_JWT_SECRET="your-secure-secret-here"
+export VOYAGER_JWT_EXPIRE_MINUTES="30"
+
+# Or use auto-generated secret (will generate new secret each restart)
+# JWT secret will auto-generate if VOYAGER_JWT_SECRET is not set
+```
+
 ### Core Development Workflow
 ```bash
 # Setup virtual environment
