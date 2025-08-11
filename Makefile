@@ -1,12 +1,13 @@
 # VOYAGER-Trader Makefile
 # Automation for installation, configuration, testing, and running the system
 
-.PHONY: help install configure test test-unit test-integration test-components \
+.PHONY: help install configure config-check config-validate setup-env test test-unit test-integration test-components \
 		test-curriculum test-skills test-prompting test-core \
 		run clean format lint typecheck quality-check \
 		setup-dev docs coverage get-system-info get-hardware-info \
 		get-network-info get-disk-info get-process-info get-env-info \
-		get-project-data get-all-data
+		get-project-data get-all-data admin-setup admin-test admin-start admin-backend admin-frontend \
+		ps-show ps-stop ps-start
 
 # Default target
 help: ## Show this help message
@@ -60,20 +61,32 @@ install: ## Install all dependencies and set up the development environment
 	@echo "  make run        # Start the system"
 
 # 2. Configuration
-configure: venv-check ## Configure and validate system settings
-	@echo "⚙️  Configuring VOYAGER-Trader system..."
-	@echo "🔍 Validating Python version..."
-	@$(PYTHON_VENV) -c "import sys; assert sys.version_info >= (3, 12), f'Python 3.12+ required, got {sys.version_info}'"
-	@echo "📦 Verifying core dependencies..."
-	@$(PYTHON_VENV) -c "import numpy, pandas, openai, pytest; print('✅ Core dependencies verified')"
-	@echo "🏗️  Validating project structure..."
-	@test -d src/voyager_trader || (echo "❌ Source directory missing"; exit 1)
-	@test -d tests || (echo "❌ Tests directory missing"; exit 1)
-	@test -f requirements.txt || (echo "❌ Requirements file missing"; exit 1)
-	@echo "🎯 Creating skills directory if needed..."
+configure: venv-check ## Interactive configuration setup with guided API key entry
+	@echo "🚀 Starting VOYAGER-Trader interactive configuration..."
+	@$(PYTHON_VENV) scripts/interactive_config.py
+	@echo "🎯 Creating required directories..."
 	@mkdir -p skills
 	@mkdir -p curriculum_data
-	@echo "✅ Configuration complete!"
+	@mkdir -p logs
+
+config-check: venv-check ## Check configuration status without setup
+	@echo "🔍 Checking VOYAGER-Trader configuration status..."
+	@$(PYTHON_VENV) scripts/validate_config.py
+
+setup-env: ## Create environment variables template file
+	@echo "🔧 Creating environment variables template..."
+	@if [ ! -f ".env" ]; then \
+		cp scripts/setup_env_template.sh .env; \
+		echo "✅ Created .env file from template"; \
+		echo "📝 Edit .env with your API keys, then run: source .env"; \
+		echo "💡 After setting up, run: make config-check"; \
+		echo "🚀 Or use interactive setup: make configure"; \
+	else \
+		echo "⚠️  .env file already exists. Template available at scripts/setup_env_template.sh"; \
+	fi
+
+config-validate: venv-check ## Quick validation check (used internally)
+	@$(PYTHON_VENV) scripts/validate_config.py >/dev/null 2>&1
 
 # 3. Testing
 test: venv-check clean ## Run all tests with coverage
@@ -121,13 +134,23 @@ test-models: venv-check ## Test data models
 	@$(PYTEST) tests/models/ -v
 
 # 5. System execution
-run: venv-check configure ## Start the VOYAGER-Trader system
+run: venv-check ## Start the VOYAGER-Trader system
+	@echo "🔍 Checking configuration..."
+	@if ! $(MAKE) config-validate; then \
+		echo "❌ System not configured. Run 'make configure' first."; \
+		exit 1; \
+	fi
 	@echo "🚀 Starting VOYAGER-Trader system..."
 	@echo "⚠️  Note: This will start the autonomous trading system"
 	@echo "Press Ctrl+C to stop"
 	@$(PYTHON_VENV) -c "from src.voyager_trader import VoyagerTrader; import time; trader = VoyagerTrader(); trader.start(); print('✅ System started - monitoring...'); time.sleep(3600)"
 
 run-demo: venv-check ## Run system in demo mode (safe)
+	@echo "🔍 Checking configuration..."
+	@if ! $(MAKE) config-validate; then \
+		echo "❌ System not configured. Run 'make configure' first."; \
+		exit 1; \
+	fi
 	@echo "🎭 Running VOYAGER-Trader in demo mode..."
 	@$(PYTHON_VENV) -c "from src.voyager_trader import VoyagerTrader; from src.voyager_trader.core import TradingConfig; config = TradingConfig(max_iterations=10); trader = VoyagerTrader(config); trader.start(); print('✅ Demo completed - system started and stopped successfully'); trader.stop()"
 
@@ -201,124 +224,219 @@ status: venv-check ## Show system status and configuration
 	@echo "============================"
 	@echo "Virtual Environment: $(VENV_DIR)"
 	@echo "Python Version: $$($(PYTHON_VENV) --version)"
-	@echo "Dependencies Status:"
-	@$(PYTHON_VENV) -c "import sys; print(f'  Python: {sys.version}')"
-	@$(PYTHON_VENV) -c "import sys; exec('try:\\n import numpy; print(\"  NumPy:\", numpy.__version__)\\nexcept Exception:\\n print(\"  NumPy: ❌ Not installed\")')" 2>/dev/null || echo "  NumPy: ❌ Not installed"
-	@$(PYTHON_VENV) -c "import sys; exec('try:\\n import pandas; print(\"  Pandas:\", pandas.__version__)\\nexcept Exception:\\n print(\"  Pandas: ❌ Not installed\")')" 2>/dev/null || echo "  Pandas: ❌ Not installed"
-	@$(PYTHON_VENV) -c "import sys; exec('try:\\n import openai; print(\"  OpenAI:\", openai.__version__)\\nexcept Exception:\\n print(\"  OpenAI: ❌ Not installed\")')" 2>/dev/null || echo "  OpenAI: ❌ Not installed"
-	@echo "Project Structure:"
-	@test -d src/voyager_trader && echo "  ✅ Source code" || echo "  ❌ Source code missing"
-	@test -d tests && echo "  ✅ Tests" || echo "  ❌ Tests missing"
-	@test -d skills && echo "  ✅ Skills directory" || echo "  ❌ Skills directory missing"
+	@echo ""
+	@echo "📋 Configuration Status:"
+	@$(PYTHON_VENV) scripts/validate_config.py
 	@echo ""
 
-# 11. System data retrieval
-get-system-info: ## Display comprehensive system information
-	@echo "System Information"
-	@echo "=================="
-	@echo "Operating System: $$(uname -s)"
-	@echo "Architecture: $$(uname -m)"
-	@echo "Kernel Version: $$(uname -r)"
-	@echo "Hostname: $$(hostname)"
-	@echo "Current User: $$(whoami)"
-	@echo "Working Directory: $$(pwd)"
-	@echo "Date/Time: $$(date)"
-	@echo ""
+# # 11. System data retrieval
+# get-system-info: ## Display comprehensive system information
+# 	@echo "System Information"
+# 	@echo "=================="
+# 	@echo "Operating System: $$(uname -s)"
+# 	@echo "Architecture: $$(uname -m)"
+# 	@echo "Kernel Version: $$(uname -r)"
+# 	@echo "Hostname: $$(hostname)"
+# 	@echo "Current User: $$(whoami)"
+# 	@echo "Working Directory: $$(pwd)"
+# 	@echo "Date/Time: $$(date)"
+# 	@echo ""
 
-get-hardware-info: ## Display hardware information
-	@echo "Hardware Information"
-	@echo "==================="
-	@if command -v sw_vers >/dev/null 2>&1; then \
-		echo "macOS Version: $$(sw_vers -productVersion)"; \
-		echo "Build Version: $$(sw_vers -buildVersion)"; \
-		echo "CPU Info: $$(sysctl -n machdep.cpu.brand_string)"; \
-		echo "Total Memory: $$(sysctl -n hw.memsize | awk '{printf "%.1f GB", $$1/1024/1024/1024}')"; \
-		echo "CPU Cores: $$(sysctl -n hw.ncpu)"; \
-	elif command -v lscpu >/dev/null 2>&1; then \
-		echo "CPU Info:"; lscpu | grep -E "(Model name|CPU\(s\)|Thread|Core|Socket)"; \
-		echo "Memory Info:"; free -h 2>/dev/null || echo "Memory info not available"; \
-	else \
-		echo "Hardware info commands not available"; \
-	fi
-	@echo ""
+# get-hardware-info: ## Display hardware information
+# 	@echo "Hardware Information"
+# 	@echo "==================="
+# 	@if command -v sw_vers >/dev/null 2>&1; then \
+# 		echo "macOS Version: $$(sw_vers -productVersion)"; \
+# 		echo "Build Version: $$(sw_vers -buildVersion)"; \
+# 		echo "CPU Info: $$(sysctl -n machdep.cpu.brand_string)"; \
+# 		echo "Total Memory: $$(sysctl -n hw.memsize | awk '{printf "%.1f GB", $$1/1024/1024/1024}')"; \
+# 		echo "CPU Cores: $$(sysctl -n hw.ncpu)"; \
+# 	elif command -v lscpu >/dev/null 2>&1; then \
+# 		echo "CPU Info:"; lscpu | grep -E "(Model name|CPU\(s\)|Thread|Core|Socket)"; \
+# 		echo "Memory Info:"; free -h 2>/dev/null || echo "Memory info not available"; \
+# 	else \
+# 		echo "Hardware info commands not available"; \
+# 	fi
+# 	@echo ""
 
-get-network-info: ## Display network configuration
-	@echo "Network Information"
-	@echo "==================="
-	@echo "Network Interfaces:"
-	@if command -v ifconfig >/dev/null 2>&1; then \
-		ifconfig | grep -E "(^[a-z]|inet )" | grep -v "127.0.0.1" | head -10; \
-	elif command -v ip >/dev/null 2>&1; then \
-		ip addr show | grep -E "(^[0-9]|inet )" | head -10; \
-	else \
-		echo "Network info commands not available"; \
-	fi
-	@echo ""
+# get-network-info: ## Display network configuration
+# 	@echo "Network Information"
+# 	@echo "==================="
+# 	@echo "Network Interfaces:"
+# 	@if command -v ifconfig >/dev/null 2>&1; then \
+# 		ifconfig | grep -E "(^[a-z]|inet )" | grep -v "127.0.0.1" | head -10; \
+# 	elif command -v ip >/dev/null 2>&1; then \
+# 		ip addr show | grep -E "(^[0-9]|inet )" | head -10; \
+# 	else \
+# 		echo "Network info commands not available"; \
+# 	fi
+# 	@echo ""
 
-get-disk-info: ## Display disk usage information
-	@echo "Disk Usage Information"
-	@echo "======================"
-	@echo "Filesystem Usage:"
-	@df -h | head -10
-	@echo ""
-	@echo "Project Directory Usage:"
-	@du -sh . 2>/dev/null || echo "Cannot determine directory size"
-	@echo ""
+# get-disk-info: ## Display disk usage information
+# 	@echo "Disk Usage Information"
+# 	@echo "======================"
+# 	@echo "Filesystem Usage:"
+# 	@df -h | head -10
+# 	@echo ""
+# 	@echo "Project Directory Usage:"
+# 	@du -sh . 2>/dev/null || echo "Cannot determine directory size"
+# 	@echo ""
 
-get-process-info: ## Display process and resource information
-	@echo "Process Information"
-	@echo "==================="
-	@echo "Load Average: $$(uptime | awk -F'load average:' '{print $$2}')"
-	@echo ""
-	@echo "Top CPU Processes:"
-	@if command -v top >/dev/null 2>&1; then \
-		top -l 1 -n 5 -stats pid,command,cpu 2>/dev/null | tail -n +12 | head -5 || ps aux --sort=-%cpu | head -6; \
-	else \
-		ps aux --sort=-%cpu 2>/dev/null | head -6 || echo "Process info not available"; \
-	fi
-	@echo ""
+# get-process-info: ## Display process and resource information
+# 	@echo "Process Information"
+# 	@echo "==================="
+# 	@echo "Load Average: $$(uptime | awk -F'load average:' '{print $$2}')"
+# 	@echo ""
+# 	@echo "Top CPU Processes:"
+# 	@if command -v top >/dev/null 2>&1; then \
+# 		top -l 1 -n 5 -stats pid,command,cpu 2>/dev/null | tail -n +12 | head -5 || ps aux --sort=-%cpu | head -6; \
+# 	else \
+# 		ps aux --sort=-%cpu 2>/dev/null | head -6 || echo "Process info not available"; \
+# 	fi
+# 	@echo ""
 
-get-env-info: ## Display environment and development information
-	@echo "Environment Information"
-	@echo "======================="
-	@echo "Shell: $$SHELL"
-	@echo "PATH (first 3 entries): $$(echo $$PATH | tr ':' '\n' | head -3 | tr '\n' ':' | sed 's/:$$//')"
-	@echo "Python Locations:"
-	@which python3 2>/dev/null || echo "  python3: not found"
-	@which python 2>/dev/null || echo "  python: not found"
-	@if command -v git >/dev/null 2>&1; then \
-		echo "Git Version: $$(git --version)"; \
-		echo "Git Config User: $$(git config --get user.name 2>/dev/null || echo 'Not configured')"; \
-		echo "Git Config Email: $$(git config --get user.email 2>/dev/null || echo 'Not configured')"; \
-	fi
-	@echo ""
+# get-env-info: ## Display environment and development information
+# 	@echo "Environment Information"
+# 	@echo "======================="
+# 	@echo "Shell: $$SHELL"
+# 	@echo "PATH (first 3 entries): $$(echo $$PATH | tr ':' '\n' | head -3 | tr '\n' ':' | sed 's/:$$//')"
+# 	@echo "Python Locations:"
+# 	@which python3 2>/dev/null || echo "  python3: not found"
+# 	@which python 2>/dev/null || echo "  python: not found"
+# 	@if command -v git >/dev/null 2>&1; then \
+# 		echo "Git Version: $$(git --version)"; \
+# 		echo "Git Config User: $$(git config --get user.name 2>/dev/null || echo 'Not configured')"; \
+# 		echo "Git Config Email: $$(git config --get user.email 2>/dev/null || echo 'Not configured')"; \
+# 	fi
+# 	@echo ""
 
-get-project-data: venv-check ## Display project-specific data and metrics
-	@echo "Project Data & Metrics"
-	@echo "======================"
-	@echo "Repository Status:"
-	@if command -v git >/dev/null 2>&1; then \
-		echo "  Branch: $$(git branch --show-current 2>/dev/null || echo 'Not a git repository')"; \
-		echo "  Last Commit: $$(git log -1 --format='%h - %s (%cr)' 2>/dev/null || echo 'No commits')"; \
-		echo "  Modified Files: $$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')"; \
-	fi
-	@echo ""
-	@echo "Project Structure:"
-	@find . -maxdepth 3 -name "*.py" | wc -l | awk '{print "  Python Files: " $$1}'
-	@find . -maxdepth 2 -name "test_*.py" -o -name "*_test.py" | wc -l | awk '{print "  Test Files: " $$1}'
-	@echo "  Project Size: $$(du -sh . | cut -f1)"
-	@echo ""
-	@if [ -f "pyproject.toml" ]; then \
-		echo "Dependencies (from pyproject.toml):"; \
-		grep -A 20 "\[project\]" pyproject.toml | grep -E "dependencies|version" | head -5; \
-	fi
-	@echo ""
+# get-project-data: venv-check ## Display project-specific data and metrics
+# 	@echo "Project Data & Metrics"
+# 	@echo "======================"
+# 	@echo "Repository Status:"
+# 	@if command -v git >/dev/null 2>&1; then \
+# 		echo "  Branch: $$(git branch --show-current 2>/dev/null || echo 'Not a git repository')"; \
+# 		echo "  Last Commit: $$(git log -1 --format='%h - %s (%cr)' 2>/dev/null || echo 'No commits')"; \
+# 		echo "  Modified Files: $$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')"; \
+# 	fi
+# 	@echo ""
+# 	@echo "Project Structure:"
+# 	@find . -maxdepth 3 -name "*.py" | wc -l | awk '{print "  Python Files: " $$1}'
+# 	@find . -maxdepth 2 -name "test_*.py" -o -name "*_test.py" | wc -l | awk '{print "  Test Files: " $$1}'
+# 	@echo "  Project Size: $$(du -sh . | cut -f1)"
+# 	@echo ""
+# 	@if [ -f "pyproject.toml" ]; then \
+# 		echo "Dependencies (from pyproject.toml):"; \
+# 		grep -A 20 "\[project\]" pyproject.toml | grep -E "dependencies|version" | head -5; \
+# 	fi
+# 	@echo ""
 
-get-all-data: get-system-info get-hardware-info get-network-info get-disk-info get-process-info get-env-info get-project-data ## Get all system data in one command
-	@echo "🎯 Complete system data collection finished!"
-	@echo ""
+# get-all-data: get-system-info get-hardware-info get-network-info get-disk-info get-process-info get-env-info get-project-data ## Get all system data in one command
+# 	@echo "🎯 Complete system data collection finished!"
+# 	@echo ""
 
 # Quick start message
+# 12. Admin Interface
+admin-setup: venv-check ## Install admin interface dependencies
+	@echo "🌐 Setting up admin interface..."
+	@echo "📦 Installing FastAPI dependencies..."
+	@$(PIP) install fastapi uvicorn[standard] python-multipart python-jose[cryptography] passlib[bcrypt]
+	@echo "📦 Installing React dependencies..."
+	@cd admin-ui && npm install
+	@echo "✅ Admin interface dependencies installed!"
+
+admin-test: venv-check ## Test admin interface setup
+	@echo "🔍 Testing admin interface setup..."
+	@$(PYTHON_VENV) test_admin_setup.py
+
+admin-start: venv-check ## Start admin interface (backend + frontend instructions)
+	@echo "🚀 Starting admin interface..."
+	@$(PYTHON_VENV) start_admin.py
+
+admin-backend: venv-check ## Start only the admin backend API server
+	@echo "🔧 Starting admin backend API server..."
+	@$(PYTHON_VENV) -m uvicorn src.voyager_trader.admin_api:app --reload --host 0.0.0.0 --port 8001
+
+admin-frontend: ## Start only the React frontend (requires backend running)
+	@echo "🎨 Starting React frontend..."
+	@echo "⚠️  Make sure backend is running (make admin-backend)"
+	@cd admin-ui && npm start
+
+# Process Management
+ps-show: ## Show all VOYAGER-Trader related processes
+	@echo "🔍 VOYAGER-Trader Processes"
+	@echo "==========================="
+	@echo ""
+	@echo "Backend API (uvicorn):"
+	@ps aux | grep -E "(uvicorn.*admin_api|uvicorn.*voyager)" | grep -v grep || echo "  ❌ No backend processes found"
+	@echo ""
+	@echo "React Frontend (node/npm):"
+	@ps aux | grep -E "(react-scripts|admin-ui)" | grep -v grep || echo "  ❌ No frontend processes found"
+	@echo ""
+	@echo "Python processes:"
+	@ps aux | grep -E "(python.*voyager|start_admin)" | grep -v grep || echo "  ❌ No Python VOYAGER processes found"
+	@echo ""
+	@echo "Port usage:"
+	@echo "  Backend API (8001):"
+	@lsof -ti :8001 >/dev/null 2>&1 && echo "  ✅ Port 8001 in use" || echo "  ❌ Port 8001 free"
+	@echo "  Frontend (3001):"
+	@lsof -ti :3001 >/dev/null 2>&1 && echo "  ✅ Port 3001 in use" || echo "  ❌ Port 3001 free"
+
+ps-stop: ## Stop all VOYAGER-Trader processes
+	@echo "🛑 Stopping all VOYAGER-Trader processes..."
+	@echo ""
+	@echo "Stopping backend API servers..."
+	@pkill -f "uvicorn.*admin_api" 2>/dev/null && echo "  ✅ Stopped admin API server" || echo "  ℹ️  No admin API server running"
+	@pkill -f "uvicorn.*voyager" 2>/dev/null && echo "  ✅ Stopped VOYAGER servers" || echo "  ℹ️  No VOYAGER servers running"
+	@echo ""
+	@echo "Stopping React frontend..."
+	@pkill -f "react-scripts" 2>/dev/null && echo "  ✅ Stopped React frontend" || echo "  ℹ️  No React frontend running"
+	@pkill -f "admin-ui.*npm" 2>/dev/null && echo "  ✅ Stopped npm processes" || echo "  ℹ️  No npm processes running"
+	@echo ""
+	@echo "Stopping Python processes..."
+	@pkill -f "python.*start_admin" 2>/dev/null && echo "  ✅ Stopped start_admin processes" || echo "  ℹ️  No start_admin processes running"
+	@echo ""
+	@echo "Killing processes on reserved ports..."
+	@lsof -ti :8001 | xargs kill 2>/dev/null && echo "  ✅ Freed port 8001" || echo "  ℹ️  Port 8001 already free"
+	@lsof -ti :3001 | xargs kill 2>/dev/null && echo "  ✅ Freed port 3001" || echo "  ℹ️  Port 3001 already free"
+	@echo ""
+	@echo "🎉 All processes stopped!"
+
+ps-start: venv-check ## Start all VOYAGER-Trader processes (backend + frontend)
+	@echo "🚀 Starting all VOYAGER-Trader processes..."
+	@echo ""
+	@echo "Starting backend API server on port 8001..."
+	@nohup $(PYTHON_VENV) -m uvicorn src.voyager_trader.admin_api:app --reload --host 0.0.0.0 --port 8001 > logs/backend.log 2>&1 &
+	@echo "  ✅ Backend starting in background (logs: logs/backend.log)"
+	@sleep 3
+	@echo ""
+	@echo "Checking backend health..."
+	@curl -s http://localhost:8001/api/health > /dev/null && echo "  ✅ Backend is healthy" || echo "  ⚠️  Backend may still be starting..."
+	@echo ""
+	@echo "Starting React frontend on port 3001..."
+	@echo "  ℹ️  Starting React development server..."
+	@echo "  ℹ️  This may take a moment to compile and start..."
+	@cd admin-ui && nohup npm start > ../logs/frontend.log 2>&1 &
+	@echo "  ✅ Frontend starting in background (logs: logs/frontend.log)"
+	@sleep 5
+	@echo ""
+	@echo "🎉 All processes started!"
+	@echo ""
+	@echo "Process status:"
+	@ps aux | grep -E "(uvicorn.*admin_api)" | grep -v grep | wc -l | xargs -I {} echo "  Backend: {} process(es) running"
+	@ps aux | grep -E "(react-scripts)" | grep -v grep | wc -l | xargs -I {} echo "  Frontend: {} process(es) running"
+	@echo ""
+	@echo "Access points:"
+	@echo "  🌐 Admin Interface: http://localhost:3001"
+	@echo "  🔧 API Documentation: http://localhost:8001/docs"
+	@echo "  ❤️  Health Check: http://localhost:8001/api/health"
+	@echo ""
+	@echo "Credentials: admin / admin123"
+	@echo ""
+	@echo "Commands:"
+	@echo "  make ps-stop      # Stop all processes"
+	@echo "  make ps-show      # Show detailed process status"
+
 welcome: ## Show welcome message and quick start guide
 	@echo "🚀 Welcome to VOYAGER-Trader!"
 	@echo "=============================="
@@ -326,11 +444,18 @@ welcome: ## Show welcome message and quick start guide
 	@echo "An autonomous, self-improving trading system inspired by VOYAGER"
 	@echo ""
 	@echo "Quick Start:"
-	@echo "  make install    # Set up everything"
-	@echo "  make test       # Run tests"
-	@echo "  make run-demo   # Try it out safely"
+	@echo "  make install      # Set up everything"
+	@echo "  make test         # Run tests"
+	@echo "  make run-demo     # Try it out safely"
+	@echo "  make admin-setup  # Set up admin interface"
+	@echo "  make ps-start     # Start all processes (backend + frontend)"
+	@echo ""
+	@echo "Process Management:"
+	@echo "  make ps-start     # Start all processes"
+	@echo "  make ps-stop      # Stop all processes"
+	@echo "  make ps-show      # Show process status"
 	@echo ""
 	@echo "Development:"
-	@echo "  make help       # See all commands"
-	@echo "  make status     # Check system status"
+	@echo "  make help         # See all commands"
+	@echo "  make status       # Check system status"
 	@echo ""
