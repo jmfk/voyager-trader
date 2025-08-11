@@ -95,9 +95,7 @@ const Login = () => {
           </div>
           
           <div className="text-center text-sm text-gray-600">
-            <p>Default credentials:</p>
-            <p>Username: admin</p>
-            <p>Password: admin123</p>
+            <p>Enter your admin credentials to continue</p>
           </div>
         </form>
       </div>

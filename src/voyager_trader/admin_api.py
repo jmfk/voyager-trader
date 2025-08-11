@@ -5,6 +5,9 @@ Provides REST endpoints for monitoring and controlling the trading system.
 """
 
 import logging
+import os
+import re
+import secrets
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
@@ -13,7 +16,15 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from jose import JWTError, jwt
-from passlib.context import CryptContext
+try:
+    from passlib.context import CryptContext
+    PASSLIB_AVAILABLE = True
+except ImportError:
+    try:
+        import bcrypt
+        PASSLIB_AVAILABLE = False
+    except ImportError:
+        raise ImportError("Either passlib or bcrypt must be installed for password hashing")
 
 from .core import VoyagerTrader, TradingConfig
 from .skills import SkillLibrary
@@ -21,11 +32,23 @@ from .curriculum import AutomaticCurriculum
 
 
 # Security configuration
-SECRET_KEY = "your-secret-key-here"  # Should be in config/environment
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+def get_secret_key() -> str:
+    """Get JWT secret key from environment or generate a secure one."""
+    secret = os.getenv("VOYAGER_JWT_SECRET")
+    if not secret:
+        # Generate a secure random secret for development
+        secret = secrets.token_urlsafe(32)
+        logging.warning("Using auto-generated JWT secret. Set VOYAGER_JWT_SECRET environment variable for production.")
+    return secret
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+SECRET_KEY = get_secret_key()
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("VOYAGER_JWT_EXPIRE_MINUTES", "30"))
+
+if PASSLIB_AVAILABLE:
+    pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+else:
+    pwd_context = None
 security = HTTPBearer()
 
 # Simple user database (in production, use proper database)
@@ -101,7 +124,12 @@ def get_trader() -> VoyagerTrader:
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify password against hash."""
-    return pwd_context.verify(plain_password, hashed_password)
+    if PASSLIB_AVAILABLE and pwd_context:
+        return pwd_context.verify(plain_password, hashed_password)
+    else:
+        # Fallback to direct bcrypt verification
+        import bcrypt
+        return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
 
 
 def authenticate_user(username: str, password: str):
@@ -241,41 +269,38 @@ async def get_skills(current_user: dict = Depends(get_current_user)):
 async def get_performance_metrics(current_user: dict = Depends(get_current_user)):
     """Get detailed performance metrics."""
     trader = get_trader()
-
-    # Mock performance data (replace with actual metrics)
-    return {
-        "total_trades": 150,
-        "winning_trades": 95,
-        "losing_trades": 55,
-        "win_rate": 63.3,
-        "total_return": 12.5,
-        "sharpe_ratio": 1.8,
-        "max_drawdown": -5.2,
-        "daily_returns": [0.2, -0.1, 0.5, 0.3, -0.2, 0.8, 0.1],
-        "trade_history": [
-            {
-                "timestamp": "2024-01-15T10:30:00",
-                "symbol": "AAPL",
-                "action": "BUY",
-                "quantity": 100,
-                "price": 185.50,
-            },
-            {
-                "timestamp": "2024-01-15T11:45:00",
-                "symbol": "GOOGL",
-                "action": "SELL",
-                "quantity": 50,
-                "price": 142.30,
-            },
-            {
-                "timestamp": "2024-01-15T14:20:00",
-                "symbol": "TSLA",
-                "action": "BUY",
-                "quantity": 75,
-                "price": 238.90,
-            },
-        ],
-    }
+    
+    try:
+        # Get actual performance metrics from the trader
+        performance_data = trader.get_performance_metrics()
+        
+        # Format the data for the API response
+        return {
+            "total_trades": performance_data.get("total_trades", 0),
+            "winning_trades": performance_data.get("winning_trades", 0), 
+            "losing_trades": performance_data.get("losing_trades", 0),
+            "win_rate": performance_data.get("win_rate", 0.0),
+            "total_return": performance_data.get("total_return", 0.0),
+            "sharpe_ratio": performance_data.get("sharpe_ratio", 0.0),
+            "max_drawdown": performance_data.get("max_drawdown", 0.0),
+            "daily_returns": performance_data.get("daily_returns", []),
+            "trade_history": performance_data.get("trade_history", []),
+        }
+    except Exception as e:
+        logging.warning(f"Failed to get performance metrics: {e}")
+        # Fallback to basic data if trader doesn't have performance metrics yet
+        return {
+            "total_trades": 0,
+            "winning_trades": 0,
+            "losing_trades": 0,
+            "win_rate": 0.0,
+            "total_return": 0.0,
+            "sharpe_ratio": 0.0,
+            "max_drawdown": 0.0,
+            "daily_returns": [],
+            "trade_history": [],
+            "message": "Performance tracking not yet active - start trading to see metrics"
+        }
 
 
 @app.get("/api/logs")
@@ -283,36 +308,73 @@ async def get_system_logs(
     current_user: dict = Depends(get_current_user), limit: int = 100
 ):
     """Get recent system logs."""
-    # Mock log data (replace with actual log reading)
-    logs = [
-        {
-            "timestamp": "2024-01-15T10:30:00",
-            "level": "INFO",
-            "message": "System started",
-        },
-        {
-            "timestamp": "2024-01-15T10:31:00",
-            "level": "INFO",
-            "message": "Loading skill library",
-        },
-        {
-            "timestamp": "2024-01-15T10:32:00",
-            "level": "INFO",
-            "message": "Curriculum initialized",
-        },
-        {
-            "timestamp": "2024-01-15T10:33:00",
-            "level": "WARNING",
-            "message": "Market volatility detected",
-        },
-        {
-            "timestamp": "2024-01-15T10:34:00",
-            "level": "INFO",
-            "message": "Executing trade strategy",
-        },
-    ]
-
-    return {"logs": logs[:limit]}
+    try:
+        # Try to read actual log files
+        log_entries = []
+        
+        # Read backend logs if available
+        backend_log_path = "logs/backend.log"
+        if os.path.exists(backend_log_path):
+            with open(backend_log_path, 'r') as f:
+                lines = f.readlines()
+                for line in reversed(lines[-limit:]):  # Get most recent entries
+                    if line.strip():
+                        # Parse log line - basic parsing for uvicorn logs
+                        timestamp_match = re.match(r'(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})', line)
+                        if timestamp_match:
+                            timestamp = timestamp_match.group(1)
+                        else:
+                            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        
+                        # Determine log level
+                        level = "INFO"
+                        if "WARNING" in line or "WARN" in line:
+                            level = "WARNING"
+                        elif "ERROR" in line:
+                            level = "ERROR"
+                        elif "DEBUG" in line:
+                            level = "DEBUG"
+                        
+                        log_entries.append({
+                            "timestamp": timestamp,
+                            "level": level,
+                            "message": line.strip()
+                        })
+        
+        # If no logs found, provide basic status
+        if not log_entries:
+            log_entries = [
+                {
+                    "timestamp": datetime.now().isoformat(),
+                    "level": "INFO",
+                    "message": "Admin API server is running",
+                },
+                {
+                    "timestamp": datetime.now().isoformat(),
+                    "level": "INFO", 
+                    "message": "No system logs available yet",
+                }
+            ]
+        
+        return {"logs": log_entries[:limit]}
+        
+    except Exception as e:
+        logging.error(f"Failed to read log files: {e}")
+        # Fallback log entries
+        return {
+            "logs": [
+                {
+                    "timestamp": datetime.now().isoformat(),
+                    "level": "WARNING",
+                    "message": f"Unable to read log files: {str(e)}",
+                },
+                {
+                    "timestamp": datetime.now().isoformat(),
+                    "level": "INFO",
+                    "message": "Admin API server is operational",
+                }
+            ]
+        }
 
 
 @app.get("/api/health")
