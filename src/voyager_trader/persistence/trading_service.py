@@ -59,7 +59,9 @@ class PersistentTradingService:
             self._repositories_initialized = True
 
     # Account operations
-    async def create_account(self, account: Account, user_id: Optional[str] = None) -> Account:
+    async def create_account(
+        self, account: Account, user_id: Optional[str] = None
+    ) -> Account:
         """
         Create a new trading account with audit logging.
 
@@ -173,7 +175,9 @@ class PersistentTradingService:
             user_id=user_id,
         )
 
-        logger.info(f"Created portfolio {saved_portfolio.name} (ID: {saved_portfolio.id})")
+        logger.info(
+            f"Created portfolio {saved_portfolio.name} (ID: {saved_portfolio.id})"
+        )
         return saved_portfolio
 
     async def update_portfolio_metrics(
@@ -230,7 +234,10 @@ class PersistentTradingService:
 
     # Order operations
     async def create_order(
-        self, order: Order, strategy_id: Optional[str] = None, user_id: Optional[str] = None
+        self,
+        order: Order,
+        strategy_id: Optional[str] = None,
+        user_id: Optional[str] = None,
     ) -> Order:
         """
         Create a new order with audit logging.
@@ -275,7 +282,10 @@ class PersistentTradingService:
         return saved_order
 
     async def update_order(
-        self, order: Order, strategy_id: Optional[str] = None, user_id: Optional[str] = None
+        self,
+        order: Order,
+        strategy_id: Optional[str] = None,
+        user_id: Optional[str] = None,
     ) -> Order:
         """
         Update an existing order with audit logging.
@@ -312,12 +322,17 @@ class PersistentTradingService:
             },
         )
 
-        logger.info(f"Updated order {saved_order.id} - Status: {saved_order.status.value}")
+        logger.info(
+            f"Updated order {saved_order.id} - Status: {saved_order.status.value}"
+        )
         return saved_order
 
     # Trade operations
     async def create_trade(
-        self, trade: Trade, strategy_id: Optional[str] = None, user_id: Optional[str] = None
+        self,
+        trade: Trade,
+        strategy_id: Optional[str] = None,
+        user_id: Optional[str] = None,
     ) -> Trade:
         """
         Create a new trade with audit logging.
@@ -364,7 +379,10 @@ class PersistentTradingService:
 
     # Position operations
     async def create_position(
-        self, position: Position, strategy_id: Optional[str] = None, user_id: Optional[str] = None
+        self,
+        position: Position,
+        strategy_id: Optional[str] = None,
+        user_id: Optional[str] = None,
     ) -> Position:
         """
         Create a new position with audit logging.
@@ -410,7 +428,10 @@ class PersistentTradingService:
         return saved_position
 
     async def update_position(
-        self, position: Position, strategy_id: Optional[str] = None, user_id: Optional[str] = None
+        self,
+        position: Position,
+        strategy_id: Optional[str] = None,
+        user_id: Optional[str] = None,
     ) -> Position:
         """
         Update an existing position with audit logging.
@@ -427,14 +448,18 @@ class PersistentTradingService:
 
         # Get existing position for audit trail
         existing_position = await self.position_repo.find_by_id(position.id)
-        old_values = existing_position.model_dump(mode="json") if existing_position else {}
+        old_values = (
+            existing_position.model_dump(mode="json") if existing_position else {}
+        )
 
         # Save updated position
         saved_position = await self.position_repo.save(position)
 
         # Determine action type
         action = "position_updated"
-        if saved_position.is_closed and (not existing_position or existing_position.is_open):
+        if saved_position.is_closed and (
+            not existing_position or existing_position.is_open
+        ):
             action = "position_closed"
 
         # Create audit log
@@ -569,7 +594,9 @@ class PersistentTradingService:
             "total_positions": len(positions),
         }
 
-    async def get_trading_statistics(self, start_date: datetime, end_date: datetime) -> Dict:
+    async def get_trading_statistics(
+        self, start_date: datetime, end_date: datetime
+    ) -> Dict:
         """Get trading statistics for a date range."""
         await self._ensure_repositories()
 

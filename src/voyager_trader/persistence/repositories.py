@@ -8,7 +8,7 @@ entities including accounts, portfolios, orders, trades, and positions.
 import json
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, Dict, List, Optional, Type, TypeVar, Generic
+from typing import Any, Dict, Generic, List, Optional, Type, TypeVar
 
 from ..models.base import BaseEntity, Repository
 from ..models.trading import Account, Order, Portfolio, Position, Trade
@@ -35,7 +35,9 @@ class BaseRepository(Repository, Generic[T]):
     serialization, deserialization, and basic database operations.
     """
 
-    def __init__(self, db_manager: DatabaseManager, entity_class: Type[T], table_name: str):
+    def __init__(
+        self, db_manager: DatabaseManager, entity_class: Type[T], table_name: str
+    ):
         """
         Initialize base repository.
 
@@ -87,7 +89,12 @@ class BaseRepository(Repository, Generic[T]):
                 data[key] = datetime.fromisoformat(value.replace("Z", "+00:00"))
             elif key.endswith("_ids") and isinstance(value, str):
                 data[key] = json.loads(value) if value else []
-            elif key in ("tags", "risk_parameters", "performance_metrics", "risk_metrics"):
+            elif key in (
+                "tags",
+                "risk_parameters",
+                "performance_metrics",
+                "risk_metrics",
+            ):
                 data[key] = (
                     json.loads(value)
                     if value
@@ -103,7 +110,9 @@ class BaseRepository(Repository, Generic[T]):
 
         if result:
             column_names = (
-                [description[0] for description in result.keys()] if hasattr(result, "keys") else []
+                [description[0] for description in result.keys()]
+                if hasattr(result, "keys")
+                else []
             )
             if not column_names:
                 # Fallback: get column names from table info
@@ -199,7 +208,9 @@ class AccountRepository(BaseRepository[Account]):
 
         # Handle optional fields
         if entity.day_trading_buying_power:
-            data["day_trading_buying_power_amount"] = float(entity.day_trading_buying_power.amount)
+            data["day_trading_buying_power_amount"] = float(
+                entity.day_trading_buying_power.amount
+            )
             data["day_trading_buying_power_currency"] = (
                 entity.day_trading_buying_power.currency.value
             )
@@ -214,9 +225,13 @@ class AccountRepository(BaseRepository[Account]):
         """Deserialize database data to Account entity."""
         # Convert timestamp strings
         if isinstance(data["created_at"], str):
-            data["created_at"] = datetime.fromisoformat(data["created_at"].replace("Z", "+00:00"))
+            data["created_at"] = datetime.fromisoformat(
+                data["created_at"].replace("Z", "+00:00")
+            )
         if isinstance(data["updated_at"], str):
-            data["updated_at"] = datetime.fromisoformat(data["updated_at"].replace("Z", "+00:00"))
+            data["updated_at"] = datetime.fromisoformat(
+                data["updated_at"].replace("Z", "+00:00")
+            )
 
         # Convert Money fields
         data["base_currency"] = Currency(data["base_currency"])
@@ -301,7 +316,10 @@ class AccountRepository(BaseRepository[Account]):
             table_info = await self.db.get_table_info(self.table_name)
             column_names = [col["name"] for col in table_info]
 
-            return [self._deserialize_entity(dict(zip(column_names, row))) for row in results]
+            return [
+                self._deserialize_entity(dict(zip(column_names, row)))
+                for row in results
+            ]
 
         return []
 
@@ -341,9 +359,13 @@ class PortfolioRepository(BaseRepository[Portfolio]):
         """Deserialize database data to Portfolio entity."""
         # Convert timestamp strings
         if isinstance(data["created_at"], str):
-            data["created_at"] = datetime.fromisoformat(data["created_at"].replace("Z", "+00:00"))
+            data["created_at"] = datetime.fromisoformat(
+                data["created_at"].replace("Z", "+00:00")
+            )
         if isinstance(data["updated_at"], str):
-            data["updated_at"] = datetime.fromisoformat(data["updated_at"].replace("Z", "+00:00"))
+            data["updated_at"] = datetime.fromisoformat(
+                data["updated_at"].replace("Z", "+00:00")
+            )
 
         # Convert Money fields
         data["base_currency"] = Currency(data["base_currency"])
@@ -368,9 +390,13 @@ class PortfolioRepository(BaseRepository[Portfolio]):
         data["max_drawdown"] = Decimal(str(data["max_drawdown"]))
 
         # Parse JSON fields
-        data["risk_metrics"] = json.loads(data["risk_metrics"]) if data["risk_metrics"] else {}
+        data["risk_metrics"] = (
+            json.loads(data["risk_metrics"]) if data["risk_metrics"] else {}
+        )
         data["performance_metrics"] = (
-            json.loads(data["performance_metrics"]) if data["performance_metrics"] else {}
+            json.loads(data["performance_metrics"])
+            if data["performance_metrics"]
+            else {}
         )
 
         # Handle positions - load from portfolio_positions table
@@ -388,7 +414,10 @@ class PortfolioRepository(BaseRepository[Portfolio]):
             table_info = await self.db.get_table_info(self.table_name)
             column_names = [col["name"] for col in table_info]
 
-            return [self._deserialize_entity(dict(zip(column_names, row))) for row in results]
+            return [
+                self._deserialize_entity(dict(zip(column_names, row)))
+                for row in results
+            ]
 
         return []
 
@@ -439,12 +468,18 @@ class OrderRepository(BaseRepository[Order]):
         """Deserialize database data to Order entity."""
         # Convert timestamp strings
         if isinstance(data["created_at"], str):
-            data["created_at"] = datetime.fromisoformat(data["created_at"].replace("Z", "+00:00"))
+            data["created_at"] = datetime.fromisoformat(
+                data["created_at"].replace("Z", "+00:00")
+            )
         if isinstance(data["updated_at"], str):
-            data["updated_at"] = datetime.fromisoformat(data["updated_at"].replace("Z", "+00:00"))
+            data["updated_at"] = datetime.fromisoformat(
+                data["updated_at"].replace("Z", "+00:00")
+            )
 
         # Convert Symbol
-        data["symbol"] = Symbol(code=data["symbol_code"], asset_class=data["symbol_asset_class"])
+        data["symbol"] = Symbol(
+            code=data["symbol_code"], asset_class=data["symbol_asset_class"]
+        )
         del data["symbol_code"]
         del data["symbol_asset_class"]
 
@@ -455,7 +490,9 @@ class OrderRepository(BaseRepository[Order]):
 
         # Convert Quantity
         data["quantity"] = Quantity(amount=Decimal(str(data["quantity_amount"])))
-        data["filled_quantity"] = Quantity(amount=Decimal(str(data["filled_quantity_amount"])))
+        data["filled_quantity"] = Quantity(
+            amount=Decimal(str(data["filled_quantity_amount"]))
+        )
         del data["quantity_amount"]
         del data["filled_quantity_amount"]
 
@@ -510,7 +547,9 @@ class OrderRepository(BaseRepository[Order]):
         table_info = await self.db.get_table_info(self.table_name)
         column_names = [col["name"] for col in table_info]
 
-        return [self._deserialize_entity(dict(zip(column_names, row))) for row in results]
+        return [
+            self._deserialize_entity(dict(zip(column_names, row))) for row in results
+        ]
 
 
 class TradeRepository(BaseRepository[Trade]):
@@ -561,7 +600,9 @@ class TradeRepository(BaseRepository[Trade]):
                 data[field] = datetime.fromisoformat(data[field].replace("Z", "+00:00"))
 
         # Convert Symbol
-        data["symbol"] = Symbol(code=data["symbol_code"], asset_class=data["symbol_asset_class"])
+        data["symbol"] = Symbol(
+            code=data["symbol_code"], asset_class=data["symbol_asset_class"]
+        )
         del data["symbol_code"]
         del data["symbol_asset_class"]
 
@@ -580,7 +621,8 @@ class TradeRepository(BaseRepository[Trade]):
 
             if data.get(amount_key) is not None:
                 data[money_field] = Money(
-                    amount=Decimal(str(data[amount_key])), currency=Currency(data[currency_key])
+                    amount=Decimal(str(data[amount_key])),
+                    currency=Currency(data[currency_key]),
                 )
                 del data[amount_key]
                 del data[currency_key]
@@ -604,7 +646,9 @@ class TradeRepository(BaseRepository[Trade]):
 
         return await self._results_to_entities(results)
 
-    async def find_by_date_range(self, start_date: datetime, end_date: datetime) -> List[Trade]:
+    async def find_by_date_range(
+        self, start_date: datetime, end_date: datetime
+    ) -> List[Trade]:
         """Find trades within date range."""
         query = "SELECT * FROM trades WHERE timestamp BETWEEN ? AND ? ORDER BY timestamp DESC"
         results = await self.db.execute(
@@ -621,7 +665,9 @@ class TradeRepository(BaseRepository[Trade]):
         table_info = await self.db.get_table_info(self.table_name)
         column_names = [col["name"] for col in table_info]
 
-        return [self._deserialize_entity(dict(zip(column_names, row))) for row in results]
+        return [
+            self._deserialize_entity(dict(zip(column_names, row))) for row in results
+        ]
 
 
 class PositionRepository(BaseRepository[Position]):
@@ -677,7 +723,9 @@ class PositionRepository(BaseRepository[Position]):
             )
 
         # Convert Symbol
-        data["symbol"] = Symbol(code=data["symbol_code"], asset_class=data["symbol_asset_class"])
+        data["symbol"] = Symbol(
+            code=data["symbol_code"], asset_class=data["symbol_asset_class"]
+        )
         del data["symbol_code"]
         del data["symbol_asset_class"]
 
@@ -695,8 +743,12 @@ class PositionRepository(BaseRepository[Position]):
                 data[field] = Decimal(str(data[field]))
 
         # Parse JSON fields
-        data["entry_trades"] = json.loads(data["entry_trades"]) if data["entry_trades"] else []
-        data["exit_trades"] = json.loads(data["exit_trades"]) if data["exit_trades"] else []
+        data["entry_trades"] = (
+            json.loads(data["entry_trades"]) if data["entry_trades"] else []
+        )
+        data["exit_trades"] = (
+            json.loads(data["exit_trades"]) if data["exit_trades"] else []
+        )
         data["tags"] = json.loads(data["tags"]) if data["tags"] else []
 
         return Position.model_validate(data)
@@ -730,7 +782,9 @@ class PositionRepository(BaseRepository[Position]):
         table_info = await self.db.get_table_info(self.table_name)
         column_names = [col["name"] for col in table_info]
 
-        return [self._deserialize_entity(dict(zip(column_names, row))) for row in results]
+        return [
+            self._deserialize_entity(dict(zip(column_names, row))) for row in results
+        ]
 
 
 class AuditLogRepository:
@@ -816,7 +870,9 @@ class AuditLogRepository:
                 log_data = dict(zip(column_names, row))
                 # Parse JSON fields
                 log_data["old_values"] = (
-                    json.loads(log_data["old_values"]) if log_data["old_values"] else None
+                    json.loads(log_data["old_values"])
+                    if log_data["old_values"]
+                    else None
                 )
                 log_data["new_values"] = (
                     json.loads(log_data["new_values"]) if log_data["new_values"] else {}
@@ -869,7 +925,9 @@ class AuditLogRepository:
                 log_data = dict(zip(column_names, row))
                 # Parse JSON fields
                 log_data["old_values"] = (
-                    json.loads(log_data["old_values"]) if log_data["old_values"] else None
+                    json.loads(log_data["old_values"])
+                    if log_data["old_values"]
+                    else None
                 )
                 log_data["new_values"] = (
                     json.loads(log_data["new_values"]) if log_data["new_values"] else {}
