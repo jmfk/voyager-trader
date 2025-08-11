@@ -16,15 +16,20 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from jose import JWTError, jwt
+
 try:
     from passlib.context import CryptContext
+
     PASSLIB_AVAILABLE = True
 except ImportError:
     try:
         import bcrypt
+
         PASSLIB_AVAILABLE = False
     except ImportError:
-        raise ImportError("Either passlib or bcrypt must be installed for password hashing")
+        raise ImportError(
+            "Either passlib or bcrypt must be installed for password hashing"
+        )
 
 from .core import VoyagerTrader, TradingConfig
 from .skills import SkillLibrary
@@ -38,8 +43,11 @@ def get_secret_key() -> str:
     if not secret:
         # Generate a secure random secret for development
         secret = secrets.token_urlsafe(32)
-        logging.warning("Using auto-generated JWT secret. Set VOYAGER_JWT_SECRET environment variable for production.")
+        logging.warning(
+            "Using auto-generated JWT secret. Set VOYAGER_JWT_SECRET environment variable for production."
+        )
     return secret
+
 
 SECRET_KEY = get_secret_key()
 ALGORITHM = "HS256"
@@ -129,7 +137,10 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     else:
         # Fallback to direct bcrypt verification
         import bcrypt
-        return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
+
+        return bcrypt.checkpw(
+            plain_password.encode("utf-8"), hashed_password.encode("utf-8")
+        )
 
 
 def authenticate_user(username: str, password: str):
@@ -269,15 +280,15 @@ async def get_skills(current_user: dict = Depends(get_current_user)):
 async def get_performance_metrics(current_user: dict = Depends(get_current_user)):
     """Get detailed performance metrics."""
     trader = get_trader()
-    
+
     try:
         # Get actual performance metrics from the trader
         performance_data = trader.get_performance_metrics()
-        
+
         # Format the data for the API response
         return {
             "total_trades": performance_data.get("total_trades", 0),
-            "winning_trades": performance_data.get("winning_trades", 0), 
+            "winning_trades": performance_data.get("winning_trades", 0),
             "losing_trades": performance_data.get("losing_trades", 0),
             "win_rate": performance_data.get("win_rate", 0.0),
             "total_return": performance_data.get("total_return", 0.0),
@@ -299,7 +310,7 @@ async def get_performance_metrics(current_user: dict = Depends(get_current_user)
             "max_drawdown": 0.0,
             "daily_returns": [],
             "trade_history": [],
-            "message": "Performance tracking not yet active - start trading to see metrics"
+            "message": "Performance tracking not yet active - start trading to see metrics",
         }
 
 
@@ -311,21 +322,23 @@ async def get_system_logs(
     try:
         # Try to read actual log files
         log_entries = []
-        
+
         # Read backend logs if available
         backend_log_path = "logs/backend.log"
         if os.path.exists(backend_log_path):
-            with open(backend_log_path, 'r') as f:
+            with open(backend_log_path, "r") as f:
                 lines = f.readlines()
                 for line in reversed(lines[-limit:]):  # Get most recent entries
                     if line.strip():
                         # Parse log line - basic parsing for uvicorn logs
-                        timestamp_match = re.match(r'(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})', line)
+                        timestamp_match = re.match(
+                            r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})", line
+                        )
                         if timestamp_match:
                             timestamp = timestamp_match.group(1)
                         else:
                             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        
+
                         # Determine log level
                         level = "INFO"
                         if "WARNING" in line or "WARN" in line:
@@ -334,13 +347,15 @@ async def get_system_logs(
                             level = "ERROR"
                         elif "DEBUG" in line:
                             level = "DEBUG"
-                        
-                        log_entries.append({
-                            "timestamp": timestamp,
-                            "level": level,
-                            "message": line.strip()
-                        })
-        
+
+                        log_entries.append(
+                            {
+                                "timestamp": timestamp,
+                                "level": level,
+                                "message": line.strip(),
+                            }
+                        )
+
         # If no logs found, provide basic status
         if not log_entries:
             log_entries = [
@@ -351,13 +366,13 @@ async def get_system_logs(
                 },
                 {
                     "timestamp": datetime.now().isoformat(),
-                    "level": "INFO", 
+                    "level": "INFO",
                     "message": "No system logs available yet",
-                }
+                },
             ]
-        
+
         return {"logs": log_entries[:limit]}
-        
+
     except Exception as e:
         logging.error(f"Failed to read log files: {e}")
         # Fallback log entries
@@ -372,7 +387,7 @@ async def get_system_logs(
                     "timestamp": datetime.now().isoformat(),
                     "level": "INFO",
                     "message": "Admin API server is operational",
-                }
+                },
             ]
         }
 
