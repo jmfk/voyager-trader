@@ -49,6 +49,30 @@ def get_secret_key() -> str:
     return secret
 
 
+def get_cors_origins() -> List[str]:
+    """Get CORS allowed origins from environment or use defaults."""
+    # Get CORS origins from environment
+    cors_origins = os.getenv("VOYAGER_CORS_ORIGINS")
+
+    if cors_origins:
+        # Split comma-separated origins and strip whitespace
+        origins = [origin.strip() for origin in cors_origins.split(",")]
+        logging.info(f"Using CORS origins from environment: {origins}")
+        return origins
+
+    # Development defaults
+    default_origins = [
+        "http://localhost:3001",  # React dev server
+        "http://127.0.0.1:3001",  # Alternative localhost
+    ]
+
+    logging.warning(
+        f"Using default CORS origins: {default_origins}. "
+        "Set VOYAGER_CORS_ORIGINS environment variable for production."
+    )
+    return default_origins
+
+
 SECRET_KEY = get_secret_key()
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("VOYAGER_JWT_EXPIRE_MINUTES", "30"))
@@ -133,7 +157,7 @@ app = FastAPI(
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3001"],  # React dev server
+    allow_origins=get_cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
