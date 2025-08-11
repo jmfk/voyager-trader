@@ -231,7 +231,9 @@ class SkillObservabilityManager:
                 else:
                     # No provider set, create one
                     if self.config.otlp_endpoint:
-                        span_exporter = OTLPSpanExporter(endpoint=self.config.otlp_endpoint)
+                        span_exporter = OTLPSpanExporter(
+                            endpoint=self.config.otlp_endpoint
+                        )
                     else:
                         from opentelemetry.sdk.trace.export import (
                             ConsoleSpanExporter,
