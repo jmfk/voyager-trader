@@ -224,42 +224,54 @@ class SkillObservabilityManager:
         try:
             # Setup tracing
             if self.config.enable_tracing:
-                if self.config.otlp_endpoint:
-                    span_exporter = OTLPSpanExporter(endpoint=self.config.otlp_endpoint)
+                # Check if tracer provider is already set to avoid override warnings
+                current_provider = trace.get_tracer_provider()
+                if isinstance(current_provider, TracerProvider):
+                    self.tracer = trace.get_tracer(__name__)
                 else:
-                    from opentelemetry.exporter.console.trace_exporter import (
-                        ConsoleSpanExporter,
-                    )
+                    # No provider set, create one
+                    if self.config.otlp_endpoint:
+                        span_exporter = OTLPSpanExporter(endpoint=self.config.otlp_endpoint)
+                    else:
+                        from opentelemetry.sdk.trace.export import (
+                            ConsoleSpanExporter,
+                        )
 
-                    span_exporter = ConsoleSpanExporter()
+                        span_exporter = ConsoleSpanExporter()
 
-                trace_provider = TracerProvider()
-                trace_provider.add_span_processor(BatchSpanProcessor(span_exporter))
-                trace.set_tracer_provider(trace_provider)
-                self.tracer = trace.get_tracer(__name__)
+                    trace_provider = TracerProvider()
+                    trace_provider.add_span_processor(BatchSpanProcessor(span_exporter))
+                    trace.set_tracer_provider(trace_provider)
+                    self.tracer = trace.get_tracer(__name__)
 
             # Setup metrics
             if self.config.enable_metrics:
-                if self.config.otlp_endpoint:
-                    metric_exporter = OTLPMetricExporter(
-                        endpoint=self.config.otlp_endpoint
-                    )
+                # Check if meter provider is already set to avoid override warnings
+                current_provider = metrics.get_meter_provider()
+                if isinstance(current_provider, MeterProvider):
+                    self.meter = metrics.get_meter(__name__)
                 else:
-                    from opentelemetry.exporter.console.metrics_exporter import (
-                        ConsoleMetricsExporter,
+                    # No provider set, create one
+                    if self.config.otlp_endpoint:
+                        metric_exporter = OTLPMetricExporter(
+                            endpoint=self.config.otlp_endpoint
+                        )
+                    else:
+                        from opentelemetry.sdk.metrics.export import (
+                            ConsoleMetricExporter,
+                        )
+
+                        metric_exporter = ConsoleMetricExporter()
+
+                    metric_reader = PeriodicExportingMetricReader(
+                        exporter=metric_exporter,
+                        export_interval_millis=self.config.metrics_export_interval_seconds
+                        * 1000,
                     )
 
-                    metric_exporter = ConsoleMetricsExporter()
-
-                metric_reader = PeriodicExportingMetricReader(
-                    exporter=metric_exporter,
-                    export_interval_millis=self.config.metrics_export_interval_seconds
-                    * 1000,
-                )
-
-                metrics_provider = MeterProvider(metric_readers=[metric_reader])
-                metrics.set_meter_provider(metrics_provider)
-                self.meter = metrics.get_meter(__name__)
+                    metrics_provider = MeterProvider(metric_readers=[metric_reader])
+                    metrics.set_meter_provider(metrics_provider)
+                    self.meter = metrics.get_meter(__name__)
 
                 self._setup_metrics()
 
