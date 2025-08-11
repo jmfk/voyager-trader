@@ -211,9 +211,9 @@ class AccountRepository(BaseRepository[Account]):
             data["day_trading_buying_power_amount"] = float(
                 entity.day_trading_buying_power.amount
             )
-            data["day_trading_buying_power_currency"] = (
-                entity.day_trading_buying_power.currency.value
-            )
+            data[
+                "day_trading_buying_power_currency"
+            ] = entity.day_trading_buying_power.currency.value
 
         if entity.daily_loss_limit:
             data["daily_loss_limit_amount"] = float(entity.daily_loss_limit.amount)
