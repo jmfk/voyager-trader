@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { CpuChipIcon } from '@heroicons/react/24/outline';
 import apiService from '../services/api';
+import { createLogger } from '../utils/logger';
 
 const SkillsTable = () => {
   const [skills, setSkills] = useState([]);
   const [loading, setLoading] = useState(true);
+  const logger = createLogger('SkillsTable');
 
   useEffect(() => {
     loadSkills();
@@ -14,8 +16,14 @@ const SkillsTable = () => {
     try {
       const skillsData = await apiService.getSkills();
       setSkills(skillsData);
+      logger.debug('Skills data loaded successfully', { 
+        skillCount: skillsData?.length || 0,
+        avgSuccessRate: skillsData?.length > 0 ? 
+          (skillsData.reduce((sum, skill) => sum + skill.success_rate, 0) / skillsData.length * 100).toFixed(1) + '%' : 
+          'N/A'
+      });
     } catch (error) {
-      console.error('Failed to load skills:', error);
+      logger.apiError('/api/skills', error);
     } finally {
       setLoading(false);
     }

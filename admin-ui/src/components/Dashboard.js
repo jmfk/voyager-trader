@@ -10,6 +10,7 @@ import {
   PowerIcon,
 } from '@heroicons/react/24/outline';
 import apiService from '../services/api';
+import { createLogger } from '../utils/logger';
 import SystemStatus from './SystemStatus';
 import PerformanceChart from './PerformanceChart';
 import SkillsTable from './SkillsTable';
@@ -20,6 +21,7 @@ const Dashboard = () => {
   const [systemStatus, setSystemStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
+  const logger = createLogger('Dashboard');
 
   useEffect(() => {
     loadSystemStatus();
@@ -32,8 +34,9 @@ const Dashboard = () => {
     try {
       const status = await apiService.getSystemStatus();
       setSystemStatus(status);
+      logger.debug('System status loaded successfully', { status });
     } catch (error) {
-      console.error('Failed to load system status:', error);
+      logger.apiError('/api/status', error);
     } finally {
       setLoading(false);
     }
@@ -41,14 +44,17 @@ const Dashboard = () => {
 
   const handleSystemControl = async (action) => {
     try {
+      logger.userAction(`system-control-${action}`, { action });
       await apiService.controlSystem(action);
       await loadSystemStatus();
+      logger.info(`System ${action} completed successfully`);
     } catch (error) {
-      console.error(`Failed to ${action} system:`, error);
+      logger.apiError('/api/system/control', error, { action });
     }
   };
 
   const handleLogout = () => {
+    logger.userAction('logout');
     apiService.logout();
     navigate('/login');
   };
