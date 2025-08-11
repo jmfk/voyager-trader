@@ -29,9 +29,13 @@ python -m uvicorn src.voyager_trader.admin_api:app --reload --host 0.0.0.0 --por
 cd admin-ui && npm install && npm start
 ```
 
-Default admin credentials: admin / admin123
 - Admin Interface: http://localhost:3001
 - API Documentation: http://localhost:8001/docs
+
+**Admin Access:**
+- Default username: `admin`
+- Default password: Set via `VOYAGER_ADMIN_PASSWORD` environment variable (defaults to `admin123` if not set)
+- **⚠️ Security Warning**: Change default credentials for production use
 
 **Security Configuration:**
 ```bash

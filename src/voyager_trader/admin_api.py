@@ -59,12 +59,34 @@ else:
     pwd_context = None
 security = HTTPBearer()
 
+
 # Simple user database (in production, use proper database)
-# Password: admin123
+def get_admin_password_hash() -> str:
+    """Get admin password hash from environment or generate default."""
+    # Check for environment-provided hash first
+    env_hash = os.getenv("VOYAGER_ADMIN_PASSWORD_HASH")
+    if env_hash:
+        return env_hash
+
+    # Check for custom password
+    custom_password = os.getenv("VOYAGER_ADMIN_PASSWORD", "admin123")
+
+    # Generate hash for the password
+    if PASSLIB_AVAILABLE and pwd_context:
+        return pwd_context.hash(custom_password)
+    else:
+        # Fallback to bcrypt
+        import bcrypt
+
+        return bcrypt.hashpw(custom_password.encode("utf-8"), bcrypt.gensalt()).decode(
+            "utf-8"
+        )
+
+
 fake_users_db = {
     "admin": {
         "username": "admin",
-        "hashed_password": "$2b$12$yGQFLGs6cdErg/KjO0T1/OLHi0kqy.iLCoQDDAHHwFH2beyAWX/du",
+        "hashed_password": get_admin_password_hash(),
         "role": "admin",
     }
 }

@@ -85,11 +85,20 @@ export VOYAGER_JWT_EXPIRE_MINUTES="480" # 8 hours
 
 ### Admin Credentials
 
-Default admin credentials:
-- **Username**: admin
-- **Password**: admin123
+Admin credentials can be configured via environment variables:
+- **Username**: admin (default)
+- **Password**: Set via `VOYAGER_ADMIN_PASSWORD` environment variable
+- **Password Hash**: Set via `VOYAGER_ADMIN_PASSWORD_HASH` environment variable (takes precedence)
 
-⚠️ **Security Warning**: Change default credentials in production deployments.
+```bash
+# Set custom admin password
+export VOYAGER_ADMIN_PASSWORD="your-secure-password"
+
+# Or set pre-hashed password (recommended for production)
+export VOYAGER_ADMIN_PASSWORD_HASH="$2b$12$your-bcrypt-hash-here"
+```
+
+⚠️ **Security Warning**: Always change default credentials for production deployments.
 
 ### API Endpoints
 
@@ -103,7 +112,7 @@ Default admin credentials:
 # Login and get token
 curl -X POST http://localhost:8001/api/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"username": "admin", "password": "admin123"}'
+  -d '{"username": "admin", "password": "your-password"}'
 
 # Use token for API calls
 curl -H "Authorization: Bearer YOUR_TOKEN_HERE" \

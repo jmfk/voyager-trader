@@ -102,7 +102,8 @@ def print_frontend_instructions():
     print()
     print("DEFAULT LOGIN CREDENTIALS:")
     print("  Username: admin")
-    print("  Password: admin123")
+    print("  Password: (set via VOYAGER_ADMIN_PASSWORD environment variable)")
+    print("  Default password: admin123 (change for production!)")
     print("="*60)
 
 

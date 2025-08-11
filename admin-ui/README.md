@@ -63,10 +63,14 @@ npm start
 - **API Documentation**: http://localhost:8001/docs
 - **API Health Check**: http://localhost:8001/api/health
 
-### Default Credentials
+### Admin Credentials
 
 - **Username**: admin
-- **Password**: admin123
+- **Password**: Configurable via environment variables
+  - Set `VOYAGER_ADMIN_PASSWORD` for custom password
+  - Default: `admin123` (⚠️ change for production!)
+
+**Security Note**: Always change default credentials in production environments.
 
 ## API Endpoints
 
