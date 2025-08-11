@@ -100,6 +100,65 @@ export VOYAGER_ADMIN_PASSWORD_HASH="$2b$12$your-bcrypt-hash-here"
 
 ⚠️ **Security Warning**: Always change default credentials for production deployments.
 
+## CORS Configuration
+
+Cross-Origin Resource Sharing (CORS) controls which domains can access the admin API. Proper CORS configuration is essential for production security.
+
+### Environment Variables
+
+| Variable | Description | Default | Required |
+|----------|-------------|---------|----------|
+| `VOYAGER_CORS_ORIGINS` | Comma-separated list of allowed origins | `http://localhost:3001,http://127.0.0.1:3001` | Production |
+
+### Configuration Examples
+
+#### 1. Development (Default)
+```bash
+# No configuration needed - uses localhost defaults
+# Default: http://localhost:3001,http://127.0.0.1:3001
+```
+
+#### 2. Production Deployment
+```bash
+# Single domain
+export VOYAGER_CORS_ORIGINS="https://admin.mycompany.com"
+
+# Multiple domains
+export VOYAGER_CORS_ORIGINS="https://admin.mycompany.com,https://trader.mycompany.com"
+
+# Include staging and production
+export VOYAGER_CORS_ORIGINS="https://admin-staging.mycompany.com,https://admin.mycompany.com"
+```
+
+#### 3. Development + Production
+```bash
+# Allow both local development and production
+export VOYAGER_CORS_ORIGINS="http://localhost:3001,https://admin.mycompany.com"
+```
+
+### Security Best Practices
+
+1. **Specific Origins**: Never use wildcard (`*`) in production
+2. **HTTPS Only**: Use HTTPS origins for production environments
+3. **Minimal Origins**: Only include necessary domains
+4. **Regular Review**: Periodically audit allowed origins
+5. **Environment Separation**: Different CORS settings for dev/staging/prod
+
+### Common CORS Issues
+
+#### Issue: Admin Interface Can't Connect
+```bash
+# Problem: CORS origin not allowed
+# Solution: Add your domain to CORS origins
+export VOYAGER_CORS_ORIGINS="https://your-admin-domain.com"
+```
+
+#### Issue: Multiple Domains Need Access
+```bash
+# Solution: Comma-separated list
+export VOYAGER_CORS_ORIGINS="https://domain1.com,https://domain2.com,https://domain3.com"
+```
+
 ### API Endpoints
 
 - **Login**: `POST /api/auth/login`

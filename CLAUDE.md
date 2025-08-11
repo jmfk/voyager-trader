@@ -43,7 +43,13 @@ cd admin-ui && npm install && npm start
 export VOYAGER_JWT_SECRET="your-secure-secret-here"
 export VOYAGER_JWT_EXPIRE_MINUTES="30"
 
-# Or use auto-generated secret (will generate new secret each restart)
+# Configure CORS origins for production
+export VOYAGER_CORS_ORIGINS="https://admin.yourdomain.com,https://trader.yourdomain.com"
+
+# Admin credentials
+export VOYAGER_ADMIN_PASSWORD="your-secure-admin-password"
+
+# Or use auto-generated JWT secret (will generate new secret each restart)
 # JWT secret will auto-generate if VOYAGER_JWT_SECRET is not set
 ```
 

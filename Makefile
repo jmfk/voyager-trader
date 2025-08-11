@@ -371,6 +371,29 @@ jwt-setup: venv-check ## Generate and save JWT secret to .env file
 	@echo "🔐 Setting up persistent JWT secret..."
 	@$(PYTHON_VENV) scripts/generate_jwt_secret.py --env
 
+# CORS Configuration Testing
+cors-test: venv-check ## Test current CORS configuration
+	@echo "🌐 Testing CORS configuration..."
+	@$(PYTHON_VENV) scripts/test_cors.py
+
+cors-check: venv-check ## Show current CORS configuration
+	@echo "🔍 Current CORS Configuration"
+	@echo "=============================="
+	@echo ""
+	@if [ -n "$$VOYAGER_CORS_ORIGINS" ]; then \
+		echo "Environment variable: VOYAGER_CORS_ORIGINS"; \
+		echo "Configured origins:"; \
+		echo "$$VOYAGER_CORS_ORIGINS" | tr ',' '\n' | sed 's/^/  - /'; \
+	else \
+		echo "No VOYAGER_CORS_ORIGINS environment variable set"; \
+		echo "Using default origins:"; \
+		echo "  - http://localhost:3001"; \
+		echo "  - http://127.0.0.1:3001"; \
+		echo ""; \
+		echo "💡 Set VOYAGER_CORS_ORIGINS for production:"; \
+		echo "   export VOYAGER_CORS_ORIGINS=\"https://admin.yourdomain.com\""; \
+	fi
+
 # Process Management
 ps-show: ## Show all VOYAGER-Trader related processes
 	@echo "🔍 VOYAGER-Trader Processes"
