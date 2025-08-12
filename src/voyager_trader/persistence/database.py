@@ -15,6 +15,8 @@ from typing import Any, AsyncGenerator, Dict, List, Optional
 
 import aiosqlite
 
+from .error_handling import SQLiteErrorHandler
+
 logger = logging.getLogger(__name__)
 
 
@@ -149,18 +151,24 @@ class DatabaseManager:
         Returns:
             Query result based on fetch type
         """
-        async with self.get_connection() as conn:
-            cursor = await conn.execute(query, parameters)
+        try:
+            async with self.get_connection() as conn:
+                cursor = await conn.execute(query, parameters)
 
-            if fetch == "one":
-                result = await cursor.fetchone()
-            elif fetch == "all":
-                result = await cursor.fetchall()
-            else:
-                result = cursor.lastrowid
+                if fetch == "one":
+                    result = await cursor.fetchone()
+                elif fetch == "all":
+                    result = await cursor.fetchall()
+                else:
+                    result = cursor.lastrowid
 
-            await conn.commit()
-            return result
+                await conn.commit()
+                return result
+        except sqlite3.Error as e:
+            SQLiteErrorHandler.log_database_error(
+                e, f"executing query: {query[:100]}..."
+            )
+            raise
 
     async def execute_many(self, query: str, parameters_list: List[tuple]) -> None:
         """
@@ -170,8 +178,14 @@ class DatabaseManager:
             query: SQL query to execute
             parameters_list: List of parameter tuples
         """
-        async with self.transaction() as conn:
-            await conn.executemany(query, parameters_list)
+        try:
+            async with self.transaction() as conn:
+                await conn.executemany(query, parameters_list)
+        except sqlite3.Error as e:
+            SQLiteErrorHandler.log_database_error(
+                e, f"executing batch query: {query[:100]}..."
+            )
+            raise
 
     async def _create_tables(self) -> None:
         """Create database tables from schema file."""
@@ -206,8 +220,18 @@ class DatabaseManager:
                     try:
                         await conn.execute(statement)
                     except sqlite3.Error as e:
-                        # Ignore "table already exists" errors
-                        if "already exists" not in str(e):
+                        # Handle error using proper error codes
+                        (
+                            should_continue,
+                            log_message,
+                        ) = SQLiteErrorHandler.handle_database_error(
+                            e, "table creation", ignore_table_exists=True
+                        )
+
+                        if should_continue:
+                            logger.debug(log_message)
+                        else:
+                            logger.error(log_message)
                             raise
 
         logger.info("Database tables created successfully")
