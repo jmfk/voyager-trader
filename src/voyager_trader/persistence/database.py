@@ -9,12 +9,18 @@ import asyncio
 import json
 import logging
 import sqlite3
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
 import aiosqlite
 
+from .connection_health import (
+    ConnectionHealthManager,
+    HealthCheckConfig,
+    HealthyConnection,
+)
 from .error_handling import SQLiteErrorHandler
 
 logger = logging.getLogger(__name__)
@@ -34,6 +40,7 @@ class DatabaseManager:
         pool_size: int = 10,
         max_overflow: int = 20,
         echo: bool = False,
+        health_check_config: Optional[HealthCheckConfig] = None,
     ):
         """
         Initialize database manager.
@@ -43,6 +50,7 @@ class DatabaseManager:
             pool_size: Size of connection pool
             max_overflow: Maximum pool overflow
             echo: Whether to echo SQL statements
+            health_check_config: Optional health check configuration
         """
         self.database_url = database_url
         self.pool_size = pool_size
@@ -55,10 +63,17 @@ class DatabaseManager:
         else:
             raise ValueError(f"Unsupported database URL: {database_url}")
 
-        # Connection pool
-        self._pool: List[aiosqlite.Connection] = []
+        # Health check configuration
+        self.health_config = health_check_config or HealthCheckConfig()
+
+        # Connection pool with health checking
+        self._pool: List[HealthyConnection] = []
         self._pool_semaphore = asyncio.Semaphore(pool_size + max_overflow)
         self._initialized = False
+
+        # Health monitoring
+        self._health_manager = ConnectionHealthManager(self.health_config)
+        self._next_connection_id = 0
 
         logger.info(f"Initialized DatabaseManager with path: {self.db_path}")
 
@@ -71,24 +86,29 @@ class DatabaseManager:
         db_dir = Path(self.db_path).parent
         db_dir.mkdir(parents=True, exist_ok=True)
 
-        # Create initial connection pool
+        # Create initial connection pool with health checking
         for _ in range(self.pool_size):
-            conn = await aiosqlite.connect(self.db_path)
-            await conn.execute("PRAGMA foreign_keys = ON")
-            await conn.execute("PRAGMA journal_mode = WAL")
-            await conn.execute("PRAGMA synchronous = NORMAL")
-            self._pool.append(conn)
+            healthy_conn = await self._create_healthy_connection()
+            self._pool.append(healthy_conn)
 
         # Create tables if they don't exist
         await self._create_tables()
+
+        # Start health monitoring if enabled
+        if self.health_config.enabled:
+            await self._health_manager.start_monitoring(self._pool)
 
         self._initialized = True
         logger.info("Database initialized successfully")
 
     async def close(self) -> None:
         """Close all database connections."""
-        for conn in self._pool:
-            await conn.close()
+        # Stop health monitoring
+        await self._health_manager.stop_monitoring()
+
+        # Close all healthy connections
+        for healthy_conn in self._pool:
+            await healthy_conn.close()
         self._pool.clear()
         self._initialized = False
         logger.info("Database connections closed")
@@ -96,29 +116,34 @@ class DatabaseManager:
     @asynccontextmanager
     async def get_connection(self) -> AsyncGenerator[aiosqlite.Connection, None]:
         """
-        Get a database connection from the pool.
+        Get a healthy database connection from the pool.
 
         Yields:
-            Database connection from the pool
+            Validated database connection from the pool
         """
+        start_time = time.time()
+        healthy_conn = None
+
         async with self._pool_semaphore:
-            if self._pool:
-                conn = self._pool.pop()
-            else:
-                # Create new connection if pool is empty
-                conn = await aiosqlite.connect(self.db_path)
-                await conn.execute("PRAGMA foreign_keys = ON")
-                await conn.execute("PRAGMA journal_mode = WAL")
-                await conn.execute("PRAGMA synchronous = NORMAL")
+            # Try to get a healthy connection from pool
+            healthy_conn = await self._get_healthy_connection_from_pool()
+
+            # Create new connection if none available or all unhealthy
+            if healthy_conn is None:
+                healthy_conn = await self._create_healthy_connection()
 
             try:
+                # Record connection usage start
+                conn = healthy_conn.connection
                 yield conn
+
+                # Record successful usage
+                query_time = time.time() - start_time
+                await healthy_conn.record_usage(query_time)
+
             finally:
-                # Return connection to pool if there's space
-                if len(self._pool) < self.pool_size:
-                    self._pool.append(conn)
-                else:
-                    await conn.close()
+                # Return connection to pool with health validation
+                await self._return_connection_to_pool(healthy_conn)
 
     @asynccontextmanager
     async def transaction(self) -> AsyncGenerator[aiosqlite.Connection, None]:
@@ -280,18 +305,119 @@ class DatabaseManager:
 
     async def get_connection_stats(self) -> Dict[str, Any]:
         """
-        Get connection pool statistics.
+        Get connection pool statistics including health metrics.
 
         Returns:
-            Dictionary with pool statistics
+            Dictionary with comprehensive pool statistics
         """
-        return {
+        # Get basic pool stats
+        basic_stats = {
             "pool_size": len(self._pool),
             "max_pool_size": self.pool_size,
             "max_overflow": self.max_overflow,
             "available_connections": self._pool_semaphore._value,
             "initialized": self._initialized,
         }
+
+        # Get health statistics
+        health_stats = self._health_manager.get_pool_statistics(self._pool)
+
+        # Combine stats
+        return {**basic_stats, **health_stats}
+
+    async def _create_healthy_connection(self) -> HealthyConnection:
+        """
+        Create a new healthy connection with proper configuration.
+
+        Returns:
+            New HealthyConnection instance
+        """
+        # Create underlying connection
+        conn = await aiosqlite.connect(self.db_path)
+
+        # Configure connection
+        await conn.execute("PRAGMA foreign_keys = ON")
+        await conn.execute("PRAGMA journal_mode = WAL")
+        await conn.execute("PRAGMA synchronous = NORMAL")
+
+        # Generate unique connection ID
+        self._next_connection_id += 1
+        connection_id = f"conn_{self._next_connection_id}"
+
+        # Wrap in healthy connection
+        healthy_conn = HealthyConnection(
+            connection=conn,
+            config=self.health_config,
+            connection_id=connection_id,
+        )
+
+        logger.debug(f"Created new healthy connection: {connection_id}")
+        return healthy_conn
+
+    async def _get_healthy_connection_from_pool(self) -> Optional[HealthyConnection]:
+        """
+        Get a healthy connection from the pool.
+
+        Returns:
+            Healthy connection if available, None otherwise
+        """
+        # Try to find healthy connections in pool
+        healthy_connections = []
+        unhealthy_connections = []
+
+        while self._pool:
+            healthy_conn = self._pool.pop()
+
+            # Check if connection is healthy
+            if await healthy_conn.validate_health():
+                healthy_connections.append(healthy_conn)
+            else:
+                unhealthy_connections.append(healthy_conn)
+                continue
+
+            # Return the first healthy connection found
+            if healthy_connections:
+                conn_to_use = healthy_connections.pop(0)
+
+                # Return other healthy connections to pool
+                self._pool.extend(healthy_connections)
+
+                # Close unhealthy connections
+                for unhealthy_conn in unhealthy_connections:
+                    await unhealthy_conn.close()
+
+                return conn_to_use
+
+        # Close any remaining unhealthy connections
+        for unhealthy_conn in unhealthy_connections:
+            await unhealthy_conn.close()
+
+        return None
+
+    async def _return_connection_to_pool(self, healthy_conn: HealthyConnection) -> None:
+        """
+        Return a connection to the pool after health validation.
+
+        Args:
+            healthy_conn: The healthy connection to return
+        """
+        # Validate health before returning to pool
+        if await healthy_conn.validate_health():
+            # Check if connection should be retired
+            if healthy_conn.is_expired or healthy_conn.is_stale:
+                await healthy_conn.close()
+                logger.debug(f"Retired connection: {healthy_conn.connection_id}")
+            else:
+                # Return to pool if there's space
+                if len(self._pool) < self.pool_size:
+                    self._pool.append(healthy_conn)
+                else:
+                    # Pool is full, close connection
+                    await healthy_conn.close()
+        else:
+            # Connection is unhealthy, close it
+            await healthy_conn.close()
+            logger.warning(f"Closed unhealthy connection: {healthy_conn.connection_id}")
 
     def serialize_json_field(self, data: Any) -> str:
         """
