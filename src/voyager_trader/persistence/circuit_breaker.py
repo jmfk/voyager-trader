@@ -619,9 +619,9 @@ class CircuitBreakerManager:
             "total_requests": total_requests,
             "total_failures": total_failures,
             "total_rejections": total_rejections,
-            "global_failure_rate": total_failures / total_requests
-            if total_requests > 0
-            else 0.0,
+            "global_failure_rate": (
+                total_failures / total_requests if total_requests > 0 else 0.0
+            ),
             "circuit_breakers": [
                 cb.get_statistics() for cb in self._circuit_breakers.values()
             ],
