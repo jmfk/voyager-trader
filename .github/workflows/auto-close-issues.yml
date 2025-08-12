@@ -1,11 +1,11 @@
-name: Auto-close Issues on PR Merge
+name: Auto Close Issues on PR Merge
 
 on:
   pull_request:
     types: [closed]
 
 jobs:
-  auto-close-issues:
+  close-linked-issues:
     if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     permissions:
@@ -13,126 +13,56 @@ jobs:
       pull-requests: read
 
     steps:
-      - name: Auto-close referenced issues
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const { context, github } = require('@actions/github');
+      - name: Extract issue numbers from PR
+        id: extract_issues
+        run: |
+          # Extract issue numbers from PR title and body
+          PR_TITLE="${{ github.event.pull_request.title }}"
+          PR_BODY="${{ github.event.pull_request.body }}"
 
-            // Keywords that indicate an issue should be closed
-            const closingKeywords = [
-              'close', 'closes', 'closed',
-              'fix', 'fixes', 'fixed',
-              'resolve', 'resolves', 'resolved',
-              'implement', 'implements', 'implemented'
-            ];
+          # Combine title and body for searching
+          FULL_TEXT="$PR_TITLE $PR_BODY"
 
-            // Function to extract issue numbers from text
-            function extractIssueNumbers(text) {
-              if (!text) return [];
+          # Extract issue numbers from patterns like "fixes #123", "closes #456", "resolves #789"
+          ISSUE_NUMBERS=$(echo "$FULL_TEXT" | grep -iEo '(fix|fixes|fixed|close|closes|closed|resolve|resolves|resolved)\s*#[0-9]+' | grep -Eo '#[0-9]+' | sed 's/#//' | sort -u | tr '\n' ' ')
 
-              const issueNumbers = new Set();
-              const lowerText = text.toLowerCase();
+          echo "Found issue numbers: $ISSUE_NUMBERS"
+          echo "issue_numbers=$ISSUE_NUMBERS" >> $GITHUB_OUTPUT
 
-              // Match patterns like "fixes #123", "closes #456", etc.
-              const keywordPattern = new RegExp(
-                `\\b(${closingKeywords.join('|')})\\s+#(\\d+)\\b`,
-                'gi'
-              );
+      - name: Close linked issues
+        if: steps.extract_issues.outputs.issue_numbers != ''
+        run: |
+          ISSUE_NUMBERS="${{ steps.extract_issues.outputs.issue_numbers }}"
 
-              let match;
-              while ((match = keywordPattern.exec(lowerText)) !== null) {
-                issueNumbers.add(parseInt(match[2]));
-              }
+          for issue_num in $ISSUE_NUMBERS; do
+            echo "Closing issue #$issue_num..."
 
-              // Also match simple "#123" patterns for additional coverage
-              const hashPattern = /#(\d+)\b/g;
-              while ((match = hashPattern.exec(lowerText)) !== null) {
-                const issueNum = parseInt(match[1]);
-                // Only include if it's mentioned near a closing keyword
-                const beforeContext = lowerText.substring(Math.max(0, match.index - 50), match.index);
-                const afterContext = lowerText.substring(match.index + match[0].length, Math.min(lowerText.length, match.index + match[0].length + 50));
+            # Close the issue with a comment linking to the merged PR
+            gh issue close $issue_num --comment "🎉 Automatically closed by merged PR #${{ github.event.pull_request.number }}"
 
-                if (closingKeywords.some(keyword =>
-                  beforeContext.includes(keyword) || afterContext.includes(keyword)
-                )) {
-                  issueNumbers.add(issueNum);
-                }
-              }
+            if [ $? -eq 0 ]; then
+              echo "✅ Successfully closed issue #$issue_num"
+            else
+              echo "❌ Failed to close issue #$issue_num"
+            fi
+          done
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-              return Array.from(issueNumbers);
-            }
+      - name: Comment on PR with closed issues
+        if: steps.extract_issues.outputs.issue_numbers != ''
+        run: |
+          ISSUE_NUMBERS="${{ steps.extract_issues.outputs.issue_numbers }}"
+          ISSUE_LIST=""
 
-            const pr = context.payload.pull_request;
+          for issue_num in $ISSUE_NUMBERS; do
+            ISSUE_LIST="$ISSUE_LIST- #$issue_num\n"
+          done
 
-            // Extract issue numbers from PR title and body
-            const titleIssues = extractIssueNumbers(pr.title);
-            const bodyIssues = extractIssueNumbers(pr.body);
-            const allIssues = [...new Set([...titleIssues, ...bodyIssues])];
+          # Add comment to PR about closed issues
+          gh pr comment ${{ github.event.pull_request.number }} --body "🎉 **Auto-closed the following issues:**
 
-            console.log(`Found potential issues to close: ${allIssues.join(', ')}`);
-
-            // Close each referenced issue
-            for (const issueNumber of allIssues) {
-              try {
-                // First, check if the issue exists and is open
-                const { data: issue } = await github.rest.issues.get({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  issue_number: issueNumber
-                });
-
-                if (issue.state === 'open') {
-                  // Close the issue with a comment
-                  await github.rest.issues.update({
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    issue_number: issueNumber,
-                    state: 'closed',
-                    state_reason: 'completed'
-                  });
-
-                  // Add a comment explaining the closure
-                  await github.rest.issues.createComment({
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    issue_number: issueNumber,
-                    body: `🎉 This issue has been automatically closed because it was referenced in the merged PR #${pr.number}: "${pr.title}"\n\nIf this was closed in error, please feel free to reopen it.`
-                  });
-
-                  console.log(`✅ Successfully closed issue #${issueNumber}`);
-                } else {
-                  console.log(`ℹ️ Issue #${issueNumber} is already ${issue.state}`);
-                }
-              } catch (error) {
-                console.error(`❌ Error processing issue #${issueNumber}:`, error.message);
-
-                // If issue doesn't exist, log it but don't fail the workflow
-                if (error.status === 404) {
-                  console.log(`ℹ️ Issue #${issueNumber} does not exist - skipping`);
-                } else {
-                  // For other errors, we might want to fail
-                  throw error;
-                }
-              }
-            }
-
-            // Summary
-            if (allIssues.length === 0) {
-              console.log('ℹ️ No issues found to close in this PR');
-            } else {
-              console.log(`🏁 Processed ${allIssues.length} issue(s): ${allIssues.join(', ')}`);
-            }
-
-      - name: Add PR comment with closure summary
-        if: steps.auto-close-issues.outputs.closed_issues
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const { context, github } = require('@actions/github');
-
-            // This step would run if we had closed issues
-            // For now, we'll just log that issues were processed
-            console.log('Issues processing completed');
+          $ISSUE_LIST
+          These issues were automatically closed because this PR was merged and contained closing keywords in the title or description."
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
