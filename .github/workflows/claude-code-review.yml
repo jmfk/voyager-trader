@@ -1,154 +1,77 @@
-name: Claude Code Review with TODO Tracking
+name: Claude Code Review
 
 on:
   pull_request:
     types: [opened, synchronize]
+    # Optional: Only run on specific file changes
+    # paths:
+    #   - "src/**/*.ts"
+    #   - "src/**/*.tsx"
+    #   - "src/**/*.js"
+    #   - "src/**/*.jsx"
 
 jobs:
   claude-review:
+    # Optional: Filter by PR author
+    # if: |
+    #   github.event.pull_request.user.login == 'external-contributor' ||
+    #   github.event.pull_request.user.login == 'new-developer' ||
+    #   github.event.pull_request.author_association == 'FIRST_TIME_CONTRIBUTOR'
+
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: write  # Need write access for comments and labels
-      issues: write        # Need write access for labels
+      pull-requests: read
+      issues: read
       id-token: write
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
-      - name: Check Review State
-        id: check-review-state
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const { data: labels } = await github.rest.issues.listLabelsOnIssue({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number
-            });
-
-            const hasInitialReview = labels.some(label => label.name === 'claude-reviewed');
-            const isFirstReview = context.payload.action === 'opened' || !hasInitialReview;
-
-            console.log(`Is first review: ${isFirstReview}`);
-            console.log(`Event action: ${context.payload.action}`);
-            console.log(`Has claude-reviewed label: ${hasInitialReview}`);
-
-            return { isFirstReview };
-
-      - name: Run Claude Initial Review
-        if: fromJSON(steps.check-review-state.outputs.result).isFirstReview
-        id: claude-initial-review
+      - name: Run Claude Code Review
+        id: claude-review
         uses: anthropics/claude-code-action@beta
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          use_sticky_comment: true
 
+          # Optional: Specify model (defaults to Claude Sonnet 4, uncomment for Claude Opus 4)
+          # model: "claude-opus-4-20250514"
+
+          # Direct prompt for automated review (no @claude mention needed)
           direct_prompt: |
-            Please perform a comprehensive INITIAL REVIEW of this pull request.
-
-            Structure your review as follows:
-
-            ## 📋 Code Review Summary
-            Brief overview of the PR quality and main findings.
-
-            ## 🔍 Detailed Analysis
-            Provide feedback on:
+            Please review this pull request and provide feedback on:
             - Code quality and best practices
-            - Potential bugs or edge cases
+            - Potential bugs or issues
             - Performance considerations
             - Security concerns
             - Test coverage
-            - Documentation
 
-            ## ✅ TODO List
-            Create a clear TODO list for issues that need to be fixed.
-            Format each item as:
-            - [ ] TODO: [specific issue] - [file:line if applicable]
+            Be constructive and helpful in your feedback.
 
-            Examples:
-            - [ ] TODO: Add input validation for email field - src/auth.js:45
-            - [ ] TODO: Handle null case in getUserData function - src/user.js:120
-            - [ ] TODO: Add unit tests for calculateDiscount - src/pricing.js
+          # Optional: Use sticky comments to make Claude reuse the same comment on subsequent pushes to the same PR
+          # use_sticky_comment: true
 
-            ## 💡 Suggestions (Optional)
-            Non-critical improvements that would enhance the code but aren't required.
+          # Optional: Customize review based on file types
+          # direct_prompt: |
+          #   Review this PR focusing on:
+          #   - For TypeScript files: Type safety and proper interface usage
+          #   - For API endpoints: Security, input validation, and error handling
+          #   - For React components: Performance, accessibility, and best practices
+          #   - For tests: Coverage, edge cases, and test quality
 
-            Mark items with priority if helpful:
-            🔴 Critical (must fix)
-            🟡 Important (should fix)
-            🟢 Nice to have (optional)
+          # Optional: Different prompts for different authors
+          # direct_prompt: |
+          #   ${{ github.event.pull_request.author_association == 'FIRST_TIME_CONTRIBUTOR' &&
+          #   'Welcome! Please review this PR from a first-time contributor. Be encouraging and provide detailed explanations for any suggestions.' ||
+          #   'Please provide a thorough code review focusing on our coding standards and best practices.' }}
 
-      - name: Add Review Label
-        if: fromJSON(steps.check-review-state.outputs.result).isFirstReview
-        uses: actions/github-script@v7
-        with:
-          script: |
-            await github.rest.issues.addLabels({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-              labels: ['claude-reviewed', 'has-todos']
-            });
+          # Optional: Add specific tools for running tests or linting
+          # allowed_tools: "Bash(npm run test),Bash(npm run lint),Bash(npm run typecheck)"
 
-      - name: Run Claude TODO Check
-        if: '!fromJSON(steps.check-review-state.outputs.result).isFirstReview'
-        id: claude-todo-check
-        uses: anthropics/claude-code-action@beta
-        with:
-          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          use_sticky_comment: true
-
-          direct_prompt: |
-            This is a FOLLOW-UP review. Check the TODO items from the initial review.
-
-            Instructions:
-            1. Find your previous review comment in this PR
-            2. Check each TODO item against the new changes
-            3. DO NOT perform a new full review
-
-            Format your response as:
-
-            ## 📊 TODO Status Update
-
-            ### ✅ Completed
-            List TODOs that have been successfully addressed:
-            - [x] ~~TODO: [what was fixed]~~
-
-            ### ⏳ Still Pending
-            List TODOs that still need work:
-            - [ ] TODO: [what still needs fixing]
-
-            ### 🆕 New Issues (if any)
-            Only mention if the fixes introduced critical new problems:
-            - [ ] TODO: [new critical issue]
-
-            ### 📈 Summary
-            - Completed: X/Y TODOs
-            - Status: [Ready for merge / Needs more work]
-
-            If all TODOs are complete: "✅ All TODO items have been addressed. This PR is ready for final review."
-            If work remains: "⚠️ There are still X pending TODO items that need to be addressed."
-
-      - name: Update Labels Based on TODO Status
-        if: '!fromJSON(steps.check-review-state.outputs.result).isFirstReview'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            // This is a simplified example - you might want to parse Claude's response
-            // to determine if all TODOs are complete
-
-            // For now, just ensure the PR stays labeled as reviewed
-            const { data: labels } = await github.rest.issues.listLabelsOnIssue({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number
-            });
-
-            // You could add logic here to:
-            - Remove 'has-todos' label if all complete
-            - Add 'ready-for-merge' label if approved
-            - Update other status labels as needed
+          # Optional: Skip review for certain conditions
+          # if: |
+          #   !contains(github.event.pull_request.title, '[skip-review]') &&
+          #   !contains(github.event.pull_request.title, '[WIP]')
