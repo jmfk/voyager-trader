@@ -1,0 +1,68 @@
+name: Auto Close Issues on PR Merge
+
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  close-linked-issues:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: read
+
+    steps:
+      - name: Extract issue numbers from PR
+        id: extract_issues
+        run: |
+          # Extract issue numbers from PR title and body
+          PR_TITLE="${{ github.event.pull_request.title }}"
+          PR_BODY="${{ github.event.pull_request.body }}"
+
+          # Combine title and body for searching
+          FULL_TEXT="$PR_TITLE $PR_BODY"
+
+          # Extract issue numbers from patterns like "fixes #123", "closes #456", "resolves #789"
+          ISSUE_NUMBERS=$(echo "$FULL_TEXT" | grep -iEo '(fix|fixes|fixed|close|closes|closed|resolve|resolves|resolved)\s*#[0-9]+' | grep -Eo '#[0-9]+' | sed 's/#//' | sort -u | tr '\n' ' ')
+
+          echo "Found issue numbers: $ISSUE_NUMBERS"
+          echo "issue_numbers=$ISSUE_NUMBERS" >> $GITHUB_OUTPUT
+
+      - name: Close linked issues
+        if: steps.extract_issues.outputs.issue_numbers != ''
+        run: |
+          ISSUE_NUMBERS="${{ steps.extract_issues.outputs.issue_numbers }}"
+
+          for issue_num in $ISSUE_NUMBERS; do
+            echo "Closing issue #$issue_num..."
+
+            # Close the issue with a comment linking to the merged PR
+            gh issue close $issue_num --comment "🎉 Automatically closed by merged PR #${{ github.event.pull_request.number }}"
+
+            if [ $? -eq 0 ]; then
+              echo "✅ Successfully closed issue #$issue_num"
+            else
+              echo "❌ Failed to close issue #$issue_num"
+            fi
+          done
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Comment on PR with closed issues
+        if: steps.extract_issues.outputs.issue_numbers != ''
+        run: |
+          ISSUE_NUMBERS="${{ steps.extract_issues.outputs.issue_numbers }}"
+          ISSUE_LIST=""
+
+          for issue_num in $ISSUE_NUMBERS; do
+            ISSUE_LIST="$ISSUE_LIST- #$issue_num\n"
+          done
+
+          # Add comment to PR about closed issues
+          gh pr comment ${{ github.event.pull_request.number }} --body "🎉 **Auto-closed the following issues:**
+
+          $ISSUE_LIST
+          These issues were automatically closed because this PR was merged and contained closing keywords in the title or description."
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
