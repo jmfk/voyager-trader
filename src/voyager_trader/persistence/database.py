@@ -16,6 +16,7 @@ from typing import Any, AsyncGenerator, Dict, List, Optional
 
 import aiosqlite
 
+from .circuit_breaker import CircuitBreakerConfig, get_circuit_breaker_manager
 from .connection_health import (
     ConnectionHealthManager,
     HealthCheckConfig,
@@ -41,6 +42,7 @@ class DatabaseManager:
         max_overflow: int = 20,
         echo: bool = False,
         health_check_config: Optional[HealthCheckConfig] = None,
+        circuit_breaker_config: Optional[CircuitBreakerConfig] = None,
     ):
         """
         Initialize database manager.
@@ -51,6 +53,7 @@ class DatabaseManager:
             max_overflow: Maximum pool overflow
             echo: Whether to echo SQL statements
             health_check_config: Optional health check configuration
+            circuit_breaker_config: Optional circuit breaker configuration
         """
         self.database_url = database_url
         self.pool_size = pool_size
@@ -65,6 +68,14 @@ class DatabaseManager:
 
         # Health check configuration
         self.health_config = health_check_config or HealthCheckConfig()
+
+        # Circuit breaker configuration and setup
+        self.circuit_breaker_config = circuit_breaker_config or CircuitBreakerConfig()
+        cb_manager = get_circuit_breaker_manager()
+        self._circuit_breaker = cb_manager.get_or_create_circuit_breaker(
+            name=f"database_{self.db_path.replace('/', '_').replace('.', '_')}",
+            config=self.circuit_breaker_config,
+        )
 
         # Connection pool with health checking
         self._pool: List[HealthyConnection] = []
@@ -116,34 +127,48 @@ class DatabaseManager:
     @asynccontextmanager
     async def get_connection(self) -> AsyncGenerator[aiosqlite.Connection, None]:
         """
-        Get a healthy database connection from the pool.
+        Get a healthy database connection from the pool with circuit breaker
+        protection.
 
         Yields:
             Validated database connection from the pool
+
+        Raises:
+            CircuitBreakerException: If circuit breaker is open
         """
+
+        async def _get_connection_operation():
+            """Internal operation to get connection."""
+            async with self._pool_semaphore:
+                # Try to get a healthy connection from pool
+                healthy_conn = await self._get_healthy_connection_from_pool()
+
+                # Create new connection if none available or all unhealthy
+                if healthy_conn is None:
+                    healthy_conn = await self._create_healthy_connection()
+
+                return healthy_conn
+
+        # Execute connection retrieval through circuit breaker
+        healthy_conn = await self._circuit_breaker.call(_get_connection_operation)
         start_time = time.time()
-        healthy_conn = None
 
-        async with self._pool_semaphore:
-            # Try to get a healthy connection from pool
-            healthy_conn = await self._get_healthy_connection_from_pool()
+        try:
+            # Record connection usage start
+            conn = healthy_conn.connection
+            yield conn
 
-            # Create new connection if none available or all unhealthy
-            if healthy_conn is None:
-                healthy_conn = await self._create_healthy_connection()
+            # Record successful usage (helps health checking and circuit breaker)
+            query_time = time.time() - start_time
+            await healthy_conn.record_usage(query_time)
 
-            try:
-                # Record connection usage start
-                conn = healthy_conn.connection
-                yield conn
-
-                # Record successful usage
-                query_time = time.time() - start_time
-                await healthy_conn.record_usage(query_time)
-
-            finally:
-                # Return connection to pool with health validation
-                await self._return_connection_to_pool(healthy_conn)
+        except Exception:
+            # Let circuit breaker know about the failure
+            # Note: The circuit breaker will handle this automatically
+            raise
+        finally:
+            # Return connection to pool with health validation
+            await self._return_connection_to_pool(healthy_conn)
 
     @asynccontextmanager
     async def transaction(self) -> AsyncGenerator[aiosqlite.Connection, None]:
@@ -322,8 +347,13 @@ class DatabaseManager:
         # Get health statistics
         health_stats = self._health_manager.get_pool_statistics(self._pool)
 
-        # Combine stats
-        return {**basic_stats, **health_stats}
+        # Get circuit breaker statistics
+        circuit_breaker_stats = {
+            "circuit_breaker": self._circuit_breaker.get_statistics()
+        }
+
+        # Combine all stats
+        return {**basic_stats, **health_stats, **circuit_breaker_stats}
 
     async def _create_healthy_connection(self) -> HealthyConnection:
         """

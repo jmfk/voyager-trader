@@ -109,6 +109,7 @@ class TestHealthyConnection:
         assert healthy_connection.metrics.usage_count == 0
         assert healthy_connection.metrics.health_check_count == 0
 
+    @pytest.mark.asyncio
     async def test_health_check_success(self, healthy_connection):
         """Test successful health check."""
         result = await healthy_connection.validate_health()
@@ -118,6 +119,7 @@ class TestHealthyConnection:
         assert healthy_connection.metrics.health_check_failures == 0
         assert healthy_connection.status == ConnectionStatus.HEALTHY
 
+    @pytest.mark.asyncio
     async def test_health_check_with_mock_failure(self, health_config):
         """Test health check with connection failure."""
         # Create mock connection that fails
@@ -137,6 +139,7 @@ class TestHealthyConnection:
         assert healthy_conn.metrics.health_check_failures == 1
         assert healthy_conn.status == ConnectionStatus.UNHEALTHY
 
+    @pytest.mark.asyncio
     async def test_health_check_timeout(self, health_config):
         """Test health check timeout."""
         # Create mock connection that takes too long
@@ -159,6 +162,7 @@ class TestHealthyConnection:
         assert result is False
         assert healthy_conn.status == ConnectionStatus.UNHEALTHY
 
+    @pytest.mark.asyncio
     async def test_health_check_caching(self, healthy_connection):
         """Test health check result caching."""
         # First health check
@@ -177,6 +181,7 @@ class TestHealthyConnection:
         result3 = await healthy_connection.validate_health(force=True)
         assert result3 is False
 
+    @pytest.mark.asyncio
     async def test_record_usage(self, healthy_connection):
         """Test usage recording and metrics."""
         initial_usage = healthy_connection.metrics.usage_count
@@ -189,6 +194,7 @@ class TestHealthyConnection:
         assert healthy_connection.metrics.last_used > initial_time
         assert healthy_connection.metrics.total_query_time == 0.1
 
+    @pytest.mark.asyncio
     async def test_connection_expiration_by_age(self, healthy_connection):
         """Test connection expiration by age."""
         # Manually set old creation time
@@ -201,6 +207,7 @@ class TestHealthyConnection:
         assert healthy_connection.is_expired is True
         assert healthy_connection.status == ConnectionStatus.EXPIRED
 
+    @pytest.mark.asyncio
     async def test_connection_expiration_by_usage(self, healthy_connection):
         """Test connection expiration by usage count."""
         # Set usage count to exceed limit
@@ -212,6 +219,7 @@ class TestHealthyConnection:
         assert healthy_connection.is_expired is True
         assert healthy_connection.status == ConnectionStatus.EXPIRED
 
+    @pytest.mark.asyncio
     async def test_connection_staleness(self, healthy_connection):
         """Test connection staleness detection."""
         # Set old last_used time
@@ -224,6 +232,7 @@ class TestHealthyConnection:
         assert healthy_connection.is_stale is True
         assert healthy_connection.status == ConnectionStatus.STALE
 
+    @pytest.mark.asyncio
     async def test_connection_stats(self, healthy_connection):
         """Test connection statistics."""
         # Record some usage
@@ -279,6 +288,7 @@ class TestConnectionHealthManager:
 
         return connections
 
+    @pytest.mark.asyncio
     async def test_start_stop_monitoring(self, health_manager, mock_connections):
         """Test starting and stopping health monitoring."""
         # Start monitoring
@@ -289,6 +299,7 @@ class TestConnectionHealthManager:
         await health_manager.stop_monitoring()
         assert health_manager._monitoring_task is None
 
+    @pytest.mark.asyncio
     async def test_monitoring_loop(self, health_manager, mock_connections):
         """Test monitoring loop execution."""
         # Start monitoring
@@ -315,6 +326,7 @@ class TestConnectionHealthManager:
         assert stats["average_age"] == 0.0
         assert stats["total_usage"] == 0
 
+    @pytest.mark.asyncio
     async def test_pool_statistics_with_connections(
         self, health_manager, mock_connections
     ):
@@ -374,6 +386,7 @@ class TestDatabaseManagerHealthIntegration:
         yield manager
         await manager.close()
 
+    @pytest.mark.asyncio
     async def test_database_manager_initialization_with_health_checks(self, db_manager):
         """Test DatabaseManager initialization with health checking."""
         await db_manager.initialize()
@@ -383,6 +396,7 @@ class TestDatabaseManagerHealthIntegration:
         assert all(isinstance(conn, HealthyConnection) for conn in db_manager._pool)
         assert db_manager._health_manager is not None
 
+    @pytest.mark.asyncio
     async def test_healthy_connection_retrieval(self, db_manager):
         """Test getting healthy connections from pool."""
         await db_manager.initialize()
@@ -395,6 +409,7 @@ class TestDatabaseManagerHealthIntegration:
             result = await cursor.fetchone()
             assert result == (1,)
 
+    @pytest.mark.asyncio
     async def test_connection_health_validation(self, db_manager):
         """Test connection health validation during retrieval."""
         await db_manager.initialize()
@@ -406,6 +421,7 @@ class TestDatabaseManagerHealthIntegration:
                 result = await cursor.fetchone()
                 assert result == (1,)
 
+    @pytest.mark.asyncio
     async def test_connection_stats_with_health_metrics(self, db_manager):
         """Test connection statistics including health metrics."""
         await db_manager.initialize()
@@ -427,6 +443,7 @@ class TestDatabaseManagerHealthIntegration:
         assert "average_age" in stats
         assert "total_usage" in stats
 
+    @pytest.mark.asyncio
     async def test_unhealthy_connection_removal(self, db_manager):
         """Test automatic removal of unhealthy connections."""
         await db_manager.initialize()
@@ -441,6 +458,7 @@ class TestDatabaseManagerHealthIntegration:
             result = await cursor.fetchone()
             assert result == (1,)
 
+    @pytest.mark.asyncio
     async def test_connection_expiration_handling(self, db_manager):
         """Test handling of expired connections."""
         await db_manager.initialize()
@@ -455,6 +473,7 @@ class TestDatabaseManagerHealthIntegration:
             result = await cursor.fetchone()
             assert result == (1,)
 
+    @pytest.mark.asyncio
     async def test_health_monitoring_integration(self, db_manager):
         """Test health monitoring integration."""
         await db_manager.initialize()
@@ -467,6 +486,7 @@ class TestDatabaseManagerHealthIntegration:
             if conn.metrics.health_check_count > 0:
                 assert conn.is_healthy
 
+    @pytest.mark.asyncio
     async def test_database_manager_cleanup(self, db_manager):
         """Test proper cleanup of health monitoring."""
         await db_manager.initialize()
@@ -482,6 +502,7 @@ class TestDatabaseManagerHealthIntegration:
         assert len(db_manager._pool) == 0
         assert db_manager._initialized is False
 
+    @pytest.mark.asyncio
     async def test_disabled_health_checks(self, temp_db_path):
         """Test DatabaseManager with disabled health checks."""
         disabled_config = HealthCheckConfig(enabled=False)
@@ -516,6 +537,7 @@ class TestHealthCheckErrorScenarios:
         """Create test health check configuration."""
         return HealthCheckConfig(timeout=0.1)
 
+    @pytest.mark.asyncio
     async def test_health_check_with_closed_connection(self, health_config):
         """Test health check with closed connection."""
         # Create connection and close it
@@ -542,6 +564,7 @@ class TestHealthCheckErrorScenarios:
         finally:
             Path(temp_path).unlink(missing_ok=True)
 
+    @pytest.mark.asyncio
     async def test_health_check_with_corrupted_database(self, health_config):
         """Test health check with corrupted database file."""
         # Create corrupted database file
@@ -568,6 +591,7 @@ class TestHealthCheckErrorScenarios:
         finally:
             Path(temp_file.name).unlink(missing_ok=True)
 
+    @pytest.mark.asyncio
     async def test_concurrent_health_checks(self, health_config):
         """Test concurrent health checks on same connection."""
         temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".db")
