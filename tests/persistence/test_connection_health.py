@@ -14,6 +14,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import aiosqlite
 import pytest
+import pytest_asyncio
 
 from src.voyager_trader.persistence.connection_health import (
     ConnectionHealthManager,
@@ -90,16 +91,27 @@ class TestHealthyConnection:
             max_idle_time=30,
         )
 
-    @pytest.fixture
-    def healthy_connection(self, db_connection, health_config):
+    @pytest_asyncio.fixture
+    async def healthy_connection(self, temp_db, health_config):
         """Create HealthyConnection for testing."""
-        return HealthyConnection(
-            connection=db_connection,
+        conn = await aiosqlite.connect(temp_db)
+
+        # Configure connection like DatabaseManager does
+        await conn.execute("PRAGMA foreign_keys = ON")
+        await conn.execute("PRAGMA journal_mode = WAL")
+        await conn.execute("PRAGMA synchronous = NORMAL")
+
+        healthy_conn = HealthyConnection(
+            connection=conn,
             config=health_config,
             connection_id="test_conn_1",
         )
 
-    def test_initial_state(self, healthy_connection):
+        yield healthy_conn
+        await conn.close()
+
+    @pytest.mark.asyncio
+    async def test_initial_state(self, healthy_connection):
         """Test initial connection state."""
         assert healthy_connection.connection_id == "test_conn_1"
         assert healthy_connection.status == ConnectionStatus.HEALTHY
