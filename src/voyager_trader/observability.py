@@ -13,9 +13,12 @@ Key Features:
 - Performance regression detection
 """
 
+import atexit
 import hashlib
 import json
+import os
 import re
+import signal
 import time
 import uuid
 from contextlib import contextmanager
@@ -42,7 +45,13 @@ try:
     from opentelemetry.sdk.trace.export import BatchSpanProcessor
     from opentelemetry.trace.status import Status, StatusCode
 
-    OPENTELEMETRY_AVAILABLE = True
+    # Check if OpenTelemetry should be disabled (useful in CI/test environments)
+    OPENTELEMETRY_DISABLED = os.getenv("DISABLE_OPENTELEMETRY", "false").lower() in (
+        "true",
+        "1",
+        "yes",
+    )
+    OPENTELEMETRY_AVAILABLE = not OPENTELEMETRY_DISABLED
 except ImportError:
     OPENTELEMETRY_AVAILABLE = False
 
@@ -219,6 +228,10 @@ class SkillObservabilityManager:
         # Setup enhanced logging
         self._setup_logging()
 
+        # Register cleanup on exit and signal handlers
+        atexit.register(self.cleanup)
+        self._register_signal_handlers()
+
     def _setup_opentelemetry(self) -> None:
         """Setup OpenTelemetry tracing and metrics."""
         try:
@@ -235,9 +248,7 @@ class SkillObservabilityManager:
                             endpoint=self.config.otlp_endpoint
                         )
                     else:
-                        from opentelemetry.sdk.trace.export import (
-                            ConsoleSpanExporter,
-                        )
+                        from opentelemetry.sdk.trace.export import ConsoleSpanExporter
 
                         span_exporter = ConsoleSpanExporter()
 
@@ -267,8 +278,9 @@ class SkillObservabilityManager:
 
                     metric_reader = PeriodicExportingMetricReader(
                         exporter=metric_exporter,
-                        export_interval_millis=self.config.metrics_export_interval_seconds
-                        * 1000,
+                        export_interval_millis=(
+                            self.config.metrics_export_interval_seconds * 1000
+                        ),
                     )
 
                     metrics_provider = MeterProvider(metric_readers=[metric_reader])
@@ -401,6 +413,22 @@ class SkillObservabilityManager:
 
         return True
 
+    def _register_signal_handlers(self) -> None:
+        """Register signal handlers for graceful shutdown."""
+
+        def signal_handler(signum, frame):
+            try:
+                self.cleanup()
+            except Exception:
+                pass  # Ignore errors during signal-triggered cleanup
+
+        try:
+            signal.signal(signal.SIGTERM, signal_handler)
+            signal.signal(signal.SIGINT, signal_handler)
+        except Exception:
+            # Signal handling might not be available in all environments
+            pass
+
     @contextmanager
     def instrument_skill_execution(self, skill_id: str, inputs: Dict[str, Any]):
         """Context manager for instrumenting skill execution."""
@@ -519,8 +547,9 @@ class SkillObservabilityManager:
                     span.end()
 
                 # Log execution completion
+                status = "success" if success else "failure"
                 self.logger.info(
-                    f"Completed skill execution: {skill_id} ({'success' if success else 'failure'})",
+                    f"Completed skill execution: {skill_id} ({status})",
                     extra={
                         "correlation_id": correlation_id,
                         "skill_id": skill_id,
@@ -632,8 +661,9 @@ class SkillObservabilityManager:
                     span.end()
 
                 # Log composition completion
+                status = "success" if success else "failure"
                 self.logger.info(
-                    f"Completed skill composition: {'success' if success else 'failure'}",
+                    f"Completed skill composition: {status}",
                     extra={
                         "composition_id": composition_id,
                         "success": success,
@@ -719,7 +749,9 @@ class SkillObservabilityManager:
                         "current_value": value,
                         "baseline_value": baseline.baseline_value,
                         "confidence_interval": baseline.confidence_interval,
-                        "regression_threshold": self.config.performance_degradation_threshold,
+                        "regression_threshold": (
+                            self.config.performance_degradation_threshold
+                        ),
                         "event": "performance_regression",
                     },
                 )
@@ -810,6 +842,36 @@ class SkillObservabilityManager:
 
         return summary
 
+    def _cleanup_metrics_provider(self) -> None:
+        """Clean up metrics provider with error handling."""
+        if not self.config.enable_metrics:
+            return
+
+        try:
+            provider = metrics.get_meter_provider()
+            if hasattr(provider, "force_flush"):
+                provider.force_flush(timeout_millis=2000)
+            if hasattr(provider, "shutdown"):
+                provider.shutdown(timeout_millis=2000)
+        except Exception:
+            # Ignore errors during shutdown (often due to closed files)
+            pass
+
+    def _cleanup_trace_provider(self) -> None:
+        """Clean up trace provider with error handling."""
+        if not self.config.enable_tracing:
+            return
+
+        try:
+            provider = trace.get_tracer_provider()
+            if hasattr(provider, "force_flush"):
+                provider.force_flush(timeout_millis=2000)
+            if hasattr(provider, "shutdown"):
+                provider.shutdown(timeout_millis=2000)
+        except Exception:
+            # Ignore errors during shutdown (often due to closed files)
+            pass
+
     def cleanup(self) -> None:
         """Cleanup observability resources."""
         # Clear caches
@@ -819,16 +881,8 @@ class SkillObservabilityManager:
         # Cleanup OpenTelemetry resources
         if OPENTELEMETRY_AVAILABLE:
             try:
-                # Force export any remaining metrics/traces
-                if self.config.enable_metrics:
-                    provider = metrics.get_meter_provider()
-                    if hasattr(provider, "force_flush"):
-                        provider.force_flush(timeout_millis=5000)
-
-                if self.config.enable_tracing:
-                    provider = trace.get_tracer_provider()
-                    if hasattr(provider, "force_flush"):
-                        provider.force_flush(timeout_millis=5000)
-
-            except Exception as e:
-                self.logger.error(f"Error during observability cleanup: {e}")
+                self._cleanup_metrics_provider()
+                self._cleanup_trace_provider()
+            except Exception:
+                # Ignore cleanup errors in CI/test environments
+                pass
