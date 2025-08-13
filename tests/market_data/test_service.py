@@ -1,8 +1,9 @@
 """Tests for MarketDataService."""
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
+import pytest_asyncio
 
 from src.voyager_trader.market_data.service import MarketDataService
 from src.voyager_trader.models.types import TimeFrame
@@ -20,7 +21,7 @@ def mock_sources_config():
     }
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def market_data_service(mock_sources_config):
     """Create a market data service with mock sources."""
     service = MarketDataService(
@@ -63,7 +64,7 @@ async def test_get_historical_ohlcv(market_data_service):
     """Test fetching historical OHLCV data."""
     symbol = "MOCK_AAPL"
     timeframe = TimeFrame.DAY_1
-    end_date = datetime.utcnow()
+    end_date = datetime.now(timezone.utc)
     start_date = end_date - timedelta(days=10)
 
     data = await market_data_service.get_historical_ohlcv(
@@ -84,7 +85,7 @@ async def test_get_historical_ohlcv_with_cache(market_data_service):
     """Test caching behavior for historical OHLCV data."""
     symbol = "MOCK_AAPL"
     timeframe = TimeFrame.DAY_1
-    end_date = datetime.utcnow()
+    end_date = datetime.now(timezone.utc)
     start_date = end_date - timedelta(days=5)
 
     # First call - should fetch and cache
@@ -109,7 +110,7 @@ async def test_get_historical_ohlcv_force_refresh(market_data_service):
     """Test force refresh bypasses cache."""
     symbol = "MOCK_AAPL"
     timeframe = TimeFrame.DAY_1
-    end_date = datetime.utcnow()
+    end_date = datetime.now(timezone.utc)
     start_date = end_date - timedelta(days=5)
 
     # First call to populate cache
@@ -213,7 +214,7 @@ async def test_clear_cache(market_data_service):
     """Test cache clearing."""
     symbol = "MOCK_AAPL"
     timeframe = TimeFrame.DAY_1
-    end_date = datetime.utcnow()
+    end_date = datetime.now(timezone.utc)
     start_date = end_date - timedelta(days=5)
 
     # Populate cache

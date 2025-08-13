@@ -1,7 +1,7 @@
 """Data validation and quality assurance for market data."""
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
@@ -239,7 +239,7 @@ class DataValidator:
 
     def _validate_timestamp(self, timestamp: datetime) -> None:
         """Validate timestamp is reasonable."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         # Check if timestamp is too far in the past (more than 10 years)
         if timestamp < now - timedelta(days=3650):

@@ -75,8 +75,8 @@ def sample_order():
         symbol=Symbol(code="AAPL", asset_class="equity"),
         order_type=OrderType.MARKET,
         side=OrderSide.BUY,
-        quantity=Quantity(amount=Decimal("100")),
-        price=Decimal("150.00"),
+        quantity=Quantity(amount=Decimal("50")),  # Reduced from 100 to 50 shares
+        price=Decimal("150.00"),  # 50 * 150 = $7,500 < $10,000 limit
         strategy_id="test-strategy",
     )
 
@@ -371,6 +371,8 @@ class TestRiskManager:
     ):
         """Test leverage limit violation."""
         # Create positions that would cause high leverage
+        from datetime import datetime, timezone
+
         high_leverage_position = Position(
             id="high-leverage-pos",
             symbol=Symbol(code="AAPL", asset_class="equity"),
@@ -378,7 +380,7 @@ class TestRiskManager:
             quantity=Quantity(amount=Decimal("1000")),
             entry_price=Decimal("150.00"),
             current_price=Decimal("150.00"),
-            entry_timestamp=None,
+            entry_timestamp=datetime.now(timezone.utc),
             strategy_id="test-strategy",
         )
 
