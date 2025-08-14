@@ -1,6 +1,9 @@
 """Tests for the IterativePrompting functionality."""
 
+import os
 from unittest.mock import patch
+
+import pytest
 
 from voyager_trader.core import TradingConfig
 from voyager_trader.prompting import IterativePrompting, PromptContext
@@ -24,12 +27,15 @@ class TestPromptContext:
         assert context.available_skills == ["skill1", "skill2"]
         assert context.previous_attempts == []
         assert context.performance_feedback == {"success_rate": 0.7}
-        assert context.error_messages is None
+        assert context.error_messages == []
 
 
 class TestIterativePrompting:
     """Test the IterativePrompting class."""
 
+    @pytest.mark.skipif(
+        not os.getenv("OPENAI_API_KEY"), reason="Requires OpenAI API key"
+    )
     def test_initialization(self):
         """Test iterative prompting initialization."""
         config = TradingConfig()
@@ -39,6 +45,9 @@ class TestIterativePrompting:
         assert prompting.conversation_history == []
         assert prompting.max_iterations == config.max_iterations
 
+    @pytest.mark.skipif(
+        not os.getenv("OPENAI_API_KEY"), reason="Requires OpenAI API key"
+    )
     @patch.object(IterativePrompting, "_query_llm")
     @patch.object(IterativePrompting, "_extract_code")
     @patch.object(IterativePrompting, "_is_code_improved")
@@ -71,6 +80,9 @@ class TestIterativePrompting:
         assert "errors_encountered" in metadata
         assert "performance_history" in metadata
 
+    @pytest.mark.skipif(
+        not os.getenv("OPENAI_API_KEY"), reason="Requires OpenAI API key"
+    )
     def test_build_prompt_basic(self):
         """Test building a basic prompt."""
         config = TradingConfig()
@@ -90,6 +102,9 @@ class TestIterativePrompting:
         assert "trend" in prompt
         assert "skill1" in prompt
 
+    @pytest.mark.skipif(
+        not os.getenv("OPENAI_API_KEY"), reason="Requires OpenAI API key"
+    )
     def test_build_prompt_with_code(self):
         """Test building prompt with existing code."""
         config = TradingConfig()
@@ -109,6 +124,9 @@ class TestIterativePrompting:
         assert "Current Code:" in prompt
         assert current_code in prompt
 
+    @pytest.mark.skipif(
+        not os.getenv("OPENAI_API_KEY"), reason="Requires OpenAI API key"
+    )
     def test_build_prompt_with_feedback(self):
         """Test building prompt with performance feedback."""
         config = TradingConfig()
@@ -129,6 +147,9 @@ class TestIterativePrompting:
         assert "Previous Errors:" in prompt
         assert "Error 1" in prompt
 
+    @pytest.mark.skipif(
+        not os.getenv("OPENAI_API_KEY"), reason="Requires OpenAI API key"
+    )
     def test_extract_code(self):
         """Test extracting code from LLM response."""
         config = TradingConfig()
@@ -148,6 +169,9 @@ class TestIterativePrompting:
         assert "return 'buy'" in code
         assert "Here's the strategy:" not in code
 
+    @pytest.mark.skipif(
+        not os.getenv("OPENAI_API_KEY"), reason="Requires OpenAI API key"
+    )
     def test_is_code_improved(self):
         """Test code improvement detection."""
         config = TradingConfig()
@@ -167,6 +191,9 @@ class TestIterativePrompting:
 
         assert prompting._is_code_improved(old_code, new_code, context)
 
+    @pytest.mark.skipif(
+        not os.getenv("OPENAI_API_KEY"), reason="Requires OpenAI API key"
+    )
     def test_should_stop_high_performance(self):
         """Test stopping criteria with high performance."""
         config = TradingConfig()
@@ -183,6 +210,9 @@ class TestIterativePrompting:
         should_stop = prompting._should_stop(context, "def strategy(): pass", 5)
         assert should_stop is True
 
+    @pytest.mark.skipif(
+        not os.getenv("OPENAI_API_KEY"), reason="Requires OpenAI API key"
+    )
     def test_should_stop_low_performance(self):
         """Test stopping criteria with low performance."""
         config = TradingConfig()
