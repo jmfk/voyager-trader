@@ -3,7 +3,7 @@
 import asyncio
 import logging
 import random
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import AsyncGenerator, Dict, List, Optional
 
@@ -96,7 +96,13 @@ class MockDataSource(DataSource):
 
         # Generate time series
         timeframe_minutes = self._timeframe_to_minutes(timeframe)
-        current_time = start_date
+        # Ensure timezone-aware datetime
+        if start_date.tzinfo is None:
+            current_time = start_date.replace(tzinfo=timezone.utc)
+        else:
+            current_time = start_date
+        if end_date.tzinfo is None:
+            end_date = end_date.replace(tzinfo=timezone.utc)
         ohlcv_data = []
 
         while current_time <= end_date:
@@ -155,7 +161,7 @@ class MockDataSource(DataSource):
         timeframe: TimeFrame,
     ) -> Optional[OHLCV]:
         """Generate latest OHLCV bar."""
-        end_time = datetime.utcnow()
+        end_time = datetime.now(timezone.utc)
         timeframe_minutes = self._timeframe_to_minutes(timeframe)
         start_time = end_time - timedelta(minutes=timeframe_minutes)
 
@@ -182,7 +188,7 @@ class MockDataSource(DataSource):
 
                 tick = TickData(
                     symbol=create_symbol(symbol),
-                    timestamp=datetime.utcnow(),
+                    timestamp=datetime.now(timezone.utc),
                     price=new_price,
                     size=size,
                     tick_type="trade",
@@ -236,7 +242,7 @@ class MockDataSource(DataSource):
 
         return OrderBook(
             symbol=create_symbol(symbol),
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             bids=bids,
             asks=asks,
             sequence=random.randint(1000000, 9999999),

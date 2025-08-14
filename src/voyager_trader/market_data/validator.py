@@ -241,6 +241,11 @@ class DataValidator:
         """Validate timestamp is reasonable."""
         now = datetime.now(timezone.utc)
 
+        # Ensure timestamp is timezone-aware for comparison
+        if timestamp.tzinfo is None:
+            # Assume UTC if no timezone info
+            timestamp = timestamp.replace(tzinfo=timezone.utc)
+
         # Check if timestamp is too far in the past (more than 10 years)
         if timestamp < now - timedelta(days=3650):
             raise DataValidationError(f"Timestamp {timestamp} too far in past")

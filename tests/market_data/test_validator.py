@@ -1,10 +1,11 @@
 """Tests for DataValidator."""
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
 
+from src.voyager_trader.market_data.types import create_symbol
 from src.voyager_trader.market_data.validator import DataValidationError, DataValidator
 from src.voyager_trader.models.market import OHLCV, OrderBook, OrderBookLevel, TickData
 from src.voyager_trader.models.types import TimeFrame
@@ -20,8 +21,8 @@ def validator():
 def valid_ohlcv():
     """Create a valid OHLCV bar for testing."""
     return OHLCV(
-        symbol="AAPL",
-        timestamp=datetime.utcnow(),
+        symbol=create_symbol("AAPL"),
+        timestamp=datetime.now(timezone.utc),
         timeframe=TimeFrame.DAY_1,
         open=Decimal("100.00"),
         high=Decimal("105.00"),
@@ -35,8 +36,8 @@ def valid_ohlcv():
 def valid_tick():
     """Create a valid tick data for testing."""
     return TickData(
-        symbol="AAPL",
-        timestamp=datetime.utcnow(),
+        symbol=create_symbol("AAPL"),
+        timestamp=datetime.now(timezone.utc),
         price=Decimal("100.00"),
         size=Decimal("1000"),
         tick_type="trade",
@@ -57,8 +58,8 @@ def valid_order_book():
     ]
 
     return OrderBook(
-        symbol="AAPL",
-        timestamp=datetime.utcnow(),
+        symbol=create_symbol("AAPL"),
+        timestamp=datetime.now(timezone.utc),
         bids=bids,
         asks=asks,
     )
@@ -76,8 +77,8 @@ def test_validator_initialization():
 
     assert validator.max_price_change_percent == 25.0
     assert validator.max_volume_multiplier == 50.0
-    assert validator.min_price == Decimal("0.001")
-    assert validator.max_price == Decimal("500000.0")
+    assert validator.min_price == 0.001
+    assert validator.max_price == 500000.0
 
 
 def test_validate_valid_ohlcv(validator, valid_ohlcv):
@@ -90,8 +91,8 @@ def test_validate_ohlcv_price_range_errors(validator):
     # Price too low
     with pytest.raises(DataValidationError):
         ohlcv = OHLCV(
-            symbol="TEST",
-            timestamp=datetime.utcnow(),
+            symbol=create_symbol("TEST"),
+            timestamp=datetime.now(timezone.utc),
             timeframe=TimeFrame.DAY_1,
             open=Decimal("0.001"),  # Too low
             high=Decimal("0.002"),
@@ -104,8 +105,8 @@ def test_validate_ohlcv_price_range_errors(validator):
     # Price too high
     with pytest.raises(DataValidationError):
         ohlcv = OHLCV(
-            symbol="TEST",
-            timestamp=datetime.utcnow(),
+            symbol=create_symbol("TEST"),
+            timestamp=datetime.now(timezone.utc),
             timeframe=TimeFrame.DAY_1,
             open=Decimal("2000000"),  # Too high
             high=Decimal("2100000"),
@@ -118,10 +119,13 @@ def test_validate_ohlcv_price_range_errors(validator):
 
 def test_validate_ohlcv_negative_volume(validator):
     """Test OHLCV validation with negative volume."""
-    with pytest.raises(DataValidationError):
+    # Pydantic validates negative volume at model creation
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
         ohlcv = OHLCV(
-            symbol="TEST",
-            timestamp=datetime.utcnow(),
+            symbol=create_symbol("TEST"),
+            timestamp=datetime.now(timezone.utc),
             timeframe=TimeFrame.DAY_1,
             open=Decimal("100.00"),
             high=Decimal("105.00"),
@@ -136,8 +140,8 @@ def test_validate_ohlcv_price_continuity(validator, valid_ohlcv):
     """Test OHLCV validation with price continuity checks."""
     # Create a previous bar
     previous = OHLCV(
-        symbol="AAPL",
-        timestamp=datetime.utcnow() - timedelta(days=1),
+        symbol=create_symbol("AAPL"),
+        timestamp=datetime.now(timezone.utc) - timedelta(days=1),
         timeframe=TimeFrame.DAY_1,
         open=Decimal("100.00"),
         high=Decimal("105.00"),
@@ -152,8 +156,8 @@ def test_validate_ohlcv_price_continuity(validator, valid_ohlcv):
     # Invalid - huge price jump
     with pytest.raises(DataValidationError):
         huge_jump_ohlcv = OHLCV(
-            symbol="AAPL",
-            timestamp=datetime.utcnow(),
+            symbol=create_symbol("AAPL"),
+            timestamp=datetime.now(timezone.utc),
             timeframe=TimeFrame.DAY_1,
             open=Decimal("300.00"),  # 200% jump from previous close
             high=Decimal("310.00"),
@@ -169,8 +173,8 @@ def test_validate_ohlcv_timestamp(validator):
     # Timestamp too far in past
     with pytest.raises(DataValidationError):
         old_ohlcv = OHLCV(
-            symbol="TEST",
-            timestamp=datetime(1900, 1, 1),  # Too old
+            symbol=create_symbol("TEST"),
+            timestamp=datetime(1900, 1, 1, tzinfo=timezone.utc),  # Too old
             timeframe=TimeFrame.DAY_1,
             open=Decimal("100.00"),
             high=Decimal("105.00"),
@@ -183,8 +187,8 @@ def test_validate_ohlcv_timestamp(validator):
     # Timestamp too far in future
     with pytest.raises(DataValidationError):
         future_ohlcv = OHLCV(
-            symbol="TEST",
-            timestamp=datetime.utcnow() + timedelta(days=10),  # Too far future
+            symbol=create_symbol("TEST"),
+            timestamp=datetime.now(timezone.utc) + timedelta(days=10),  # Too far future
             timeframe=TimeFrame.DAY_1,
             open=Decimal("100.00"),
             high=Decimal("105.00"),
@@ -202,11 +206,13 @@ def test_validate_valid_tick(validator, valid_tick):
 
 def test_validate_tick_negative_values(validator):
     """Test tick validation with negative values."""
-    # Negative price
-    with pytest.raises(DataValidationError):
+    # Negative price - Pydantic validates at model creation
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
         tick = TickData(
-            symbol="TEST",
-            timestamp=datetime.utcnow(),
+            symbol=create_symbol("TEST"),
+            timestamp=datetime.now(timezone.utc),
             price=Decimal("-100.00"),  # Negative price
             size=Decimal("1000"),
             tick_type="trade",
@@ -214,10 +220,10 @@ def test_validate_tick_negative_values(validator):
         validator.validate_tick_data(tick)
 
     # Negative size
-    with pytest.raises(DataValidationError):
+    with pytest.raises(ValidationError):
         tick = TickData(
-            symbol="TEST",
-            timestamp=datetime.utcnow(),
+            symbol=create_symbol("TEST"),
+            timestamp=datetime.now(timezone.utc),
             price=Decimal("100.00"),
             size=Decimal("-1000"),  # Negative size
             tick_type="trade",
@@ -229,8 +235,8 @@ def test_validate_tick_sequence(validator, valid_tick):
     """Test tick validation with sequence checks."""
     # Create previous tick
     previous = TickData(
-        symbol="AAPL",
-        timestamp=datetime.utcnow() - timedelta(seconds=1),
+        symbol=create_symbol("AAPL"),
+        timestamp=datetime.now(timezone.utc) - timedelta(seconds=1),
         price=Decimal("100.00"),
         size=Decimal("1000"),
         tick_type="trade",
@@ -242,8 +248,9 @@ def test_validate_tick_sequence(validator, valid_tick):
     # Invalid - older timestamp
     with pytest.raises(DataValidationError):
         old_tick = TickData(
-            symbol="AAPL",
-            timestamp=datetime.utcnow() - timedelta(hours=1),  # Older than previous
+            symbol=create_symbol("AAPL"),
+            timestamp=datetime.now(timezone.utc)
+            - timedelta(hours=1),  # Older than previous
             price=Decimal("101.00"),
             size=Decimal("1000"),
             tick_type="trade",
@@ -260,8 +267,8 @@ def test_validate_order_book_empty(validator):
     """Test order book validation with empty levels."""
     with pytest.raises(DataValidationError):
         empty_book = OrderBook(
-            symbol="TEST",
-            timestamp=datetime.utcnow(),
+            symbol=create_symbol("TEST"),
+            timestamp=datetime.now(timezone.utc),
             bids=[],  # Empty
             asks=[],  # Empty
         )
@@ -276,8 +283,8 @@ def test_validate_order_book_wide_spread(validator):
 
     with pytest.raises(DataValidationError):
         wide_spread_book = OrderBook(
-            symbol="TEST",
-            timestamp=datetime.utcnow(),
+            symbol=create_symbol("TEST"),
+            timestamp=datetime.now(timezone.utc),
             bids=bids,
             asks=asks,
         )
@@ -292,8 +299,8 @@ def test_validate_order_book_invalid_sizes(validator):
         asks = [OrderBookLevel(price=Decimal("100.01"), size=Decimal("1000"))]
 
         book = OrderBook(
-            symbol="TEST",
-            timestamp=datetime.utcnow(),
+            symbol=create_symbol("TEST"),
+            timestamp=datetime.now(timezone.utc),
             bids=bids,
             asks=asks,
         )
@@ -302,10 +309,10 @@ def test_validate_order_book_invalid_sizes(validator):
 
 def test_validate_batch_ohlcv(validator):
     """Test batch OHLCV validation."""
-    # Create a mix of valid and invalid data
+    # Create a mix of valid data - one with price issues that validator catches
     valid_bar = OHLCV(
-        symbol="AAPL",
-        timestamp=datetime.utcnow(),
+        symbol=create_symbol("AAPL"),
+        timestamp=datetime.now(timezone.utc),
         timeframe=TimeFrame.DAY_1,
         open=Decimal("100.00"),
         high=Decimal("105.00"),
@@ -314,18 +321,19 @@ def test_validate_batch_ohlcv(validator):
         volume=Decimal("1000000"),
     )
 
-    invalid_bar = OHLCV(
-        symbol="AAPL",
-        timestamp=datetime.utcnow(),
+    # Create bar with extreme price that validator should reject
+    extreme_price_bar = OHLCV(
+        symbol=create_symbol("AAPL"),
+        timestamp=datetime.now(timezone.utc) + timedelta(days=10),  # Too far in future
         timeframe=TimeFrame.DAY_1,
         open=Decimal("100.00"),
         high=Decimal("105.00"),
         low=Decimal("99.00"),
         close=Decimal("103.00"),
-        volume=Decimal("-1000"),  # Invalid negative volume
+        volume=Decimal("1000000"),
     )
 
-    data_list = [valid_bar, invalid_bar, valid_bar]
+    data_list = [valid_bar, extreme_price_bar, valid_bar]
 
     # Should return only valid entries
     valid_data = validator.validate_batch_ohlcv(data_list)
@@ -359,8 +367,8 @@ def test_validator_with_custom_thresholds():
 
     # This should pass with custom thresholds but fail with defaults
     previous = OHLCV(
-        symbol="CRYPTO",
-        timestamp=datetime.utcnow() - timedelta(minutes=1),
+        symbol=create_symbol("CRYPTO"),
+        timestamp=datetime.now(timezone.utc) - timedelta(minutes=1),
         timeframe=TimeFrame.MINUTE_1,
         open=Decimal("1.00"),
         high=Decimal("1.05"),
@@ -370,8 +378,8 @@ def test_validator_with_custom_thresholds():
     )
 
     current = OHLCV(
-        symbol="CRYPTO",
-        timestamp=datetime.utcnow(),
+        symbol=create_symbol("CRYPTO"),
+        timestamp=datetime.now(timezone.utc),
         timeframe=TimeFrame.MINUTE_1,
         open=Decimal("1.80"),  # 80% jump - would fail default but pass custom
         high=Decimal("1.85"),

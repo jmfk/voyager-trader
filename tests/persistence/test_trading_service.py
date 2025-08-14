@@ -6,6 +6,7 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
+import pytest_asyncio
 
 from src.voyager_trader.models.trading import Account, Order, Portfolio, Position, Trade
 from src.voyager_trader.models.types import (
@@ -22,7 +23,7 @@ from src.voyager_trader.persistence.database import DatabaseManager
 from src.voyager_trader.persistence.trading_service import PersistentTradingService
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def trading_service():
     """Create a trading service with temporary database."""
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
