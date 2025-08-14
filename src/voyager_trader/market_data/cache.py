@@ -6,7 +6,7 @@ import json
 import logging
 import pickle
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional, Union
 
@@ -19,7 +19,7 @@ class CacheEntry:
     def __init__(self, data: Any, ttl: int, created_at: Optional[datetime] = None):
         self.data = data
         self.ttl = ttl  # Time to live in seconds
-        self.created_at = created_at or datetime.utcnow()
+        self.created_at = created_at or datetime.now(timezone.utc)
         self.access_count = 0
         self.last_accessed = self.created_at
 
@@ -29,13 +29,13 @@ class CacheEntry:
         if self.ttl <= 0:  # TTL of 0 or negative means no expiration
             return False
 
-        age = (datetime.utcnow() - self.created_at).total_seconds()
+        age = (datetime.now(timezone.utc) - self.created_at).total_seconds()
         return age > self.ttl
 
     def access(self) -> Any:
         """Access the cached data and update metadata."""
         self.access_count += 1
-        self.last_accessed = datetime.utcnow()
+        self.last_accessed = datetime.now(timezone.utc)
         return self.data
 
 
@@ -200,10 +200,10 @@ class DiskCache:
 
             # Update metadata
             self._metadata[key] = {
-                "created_at": datetime.utcnow().isoformat(),
+                "created_at": datetime.now(timezone.utc).isoformat(),
                 "ttl": ttl,
                 "access_count": 0,
-                "last_accessed": datetime.utcnow().isoformat(),
+                "last_accessed": datetime.now(timezone.utc).isoformat(),
                 "file_size": cache_path.stat().st_size,
             }
 

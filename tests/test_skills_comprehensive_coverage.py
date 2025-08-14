@@ -154,7 +154,10 @@ class TestSkillComposer:
             description="Second skill",
             category=SkillCategory.TECHNICAL_ANALYSIS,
             complexity=SkillComplexity.BASIC,
-            code="step2_result = step1_result + 10 if 'step1_result' in locals() else 10",
+            code=(
+                "step2_result = step1_result + 10 "
+                "if 'step1_result' in locals() else 10"
+            ),
             input_schema={"type": "object"},
             output_schema={"type": "object"},
             required_skills=["skill1"],  # Depends on skill1
@@ -172,10 +175,19 @@ class TestSkillComposer:
 
     def test_circular_dependency_detection(self):
         """Test circular dependency detection."""
-        # Create circular dependency
-        self.skill1.required_skills = ["skill2"]
+        # Create skills with circular dependency
+        skill1_circular = Skill(
+            name="skill1",
+            description="Test skill 1",
+            category=SkillCategory.MARKET_ANALYSIS,
+            complexity=SkillComplexity.BASIC,
+            code="result = {'test': 1}",
+            input_schema={"type": "object"},
+            output_schema={"type": "object"},
+            required_skills=["skill2"],  # Circular dependency
+        )
 
-        skills = [self.skill1, self.skill2]
+        skills = [skill1_circular, self.skill2]
         resolved = self.composer._resolve_dependencies(skills)
 
         assert resolved is None  # Should detect circular dependency

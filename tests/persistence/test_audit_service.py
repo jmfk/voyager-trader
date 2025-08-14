@@ -6,6 +6,7 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
+import pytest_asyncio
 
 from src.voyager_trader.models.trading import Account
 from src.voyager_trader.models.types import Currency, Money
@@ -13,7 +14,7 @@ from src.voyager_trader.persistence.audit_service import AuditService
 from src.voyager_trader.persistence.database import DatabaseManager
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def audit_service():
     """Create audit service with temporary database."""
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
@@ -440,7 +441,7 @@ async def test_get_audit_trail_filtering(audit_service):
         hour=23, minute=59, second=59, microsecond=999999
     )
 
-    recent_logs = await audit_service.get_audit_trail(
+    await audit_service.get_audit_trail(
         start_date=start_date, end_date=end_date, limit=100
     )
     # Should return recent logs (implementation dependent)

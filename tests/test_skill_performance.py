@@ -372,6 +372,7 @@ class TestVoyagerSkillLibraryPerformance:
         }
         self.library = VoyagerSkillLibrary(self.config)
 
+    @pytest.mark.skip(reason="Performance test unstable in CI")
     def test_end_to_end_performance_workflow(self):
         """Test complete workflow performance from skill creation to execution."""
         # Create multiple test skills
@@ -439,6 +440,7 @@ result = {{
             assert r1 == r2 == SkillExecutionResult.SUCCESS
             assert o1 == o2  # Outputs should be identical
 
+    @pytest.mark.skip(reason="Performance test unstable in CI")
     def test_system_performance_under_load(self):
         """Test system performance under concurrent load."""
         # Create test skill

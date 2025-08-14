@@ -6,6 +6,7 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
+import pytest_asyncio
 
 from src.voyager_trader.models.trading import Account, Order, Portfolio, Position, Trade
 from src.voyager_trader.models.types import (
@@ -29,7 +30,7 @@ from src.voyager_trader.persistence.repositories import (
 )
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def db_manager():
     """Create a temporary database manager for testing."""
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
@@ -109,7 +110,6 @@ def sample_position(sample_portfolio):
         quantity=Quantity(amount=Decimal("100")),
         entry_price=Decimal("150.00"),
         entry_timestamp=datetime.now(timezone.utc),
-        portfolio_id=sample_portfolio.id,
     )
 
 
